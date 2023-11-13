@@ -87,7 +87,51 @@ variable "reverse_fqdn" {
   description = "The reverse FQDN for the public IP address. This must be a valid FQDN. If you specify a reverse FQDN, you cannot specify a DNS name label. Not all regions support this."
 }
 
+variable "public_ip_prefix_id" {
+  type        = string
+  description = "The ID of the public IP prefix to associate with the public IP address."
+  
+}
 
+variable "idle_timeout_in_minutes" {
+  type        = number
+  description = "The idle timeout in minutes."
+  default     = 4
+  validation {
+    condition     = can(regex("^[0-9]{1,4}$", var.idle_timeout_in_minutes))
+    error_message = "The idle timeout must be between 1 and 4 digits long."
+  }
+  
+}
+
+variable "ip_tags" {
+  type        = list(string)
+  description = "A list of IP tags associated with the public IP address."
+  default     = []
+  
+}
+variable "ddos_protection_mode" {
+  type        = string
+  description = "The DDoS protection mode to use."
+  default     = "Standard"
+  validation {
+    condition     = can(regex("^(Basic|Standard)$", var.ddos_protection_mode))
+    error_message = "The DDoS protection mode must be either 'Basic' or 'Standard'."
+  }
+  
+}
+
+variable "ddos_protection_plan_id" {
+  type        = string
+  description = "The ID of the DDoS protection plan to associate with the public IP address. This is required if `ddos_protection_mode` is set to `Standard`."
+  
+}
+
+variable "edge_zone" {
+  type        = string
+  description = "The edge zone to use for the public IP address. This is required if `sku_tier` is set to `Global`."
+  
+}
 
 variable "tags" {
   type        = map(any)
