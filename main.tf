@@ -12,15 +12,14 @@ resource "azurerm_public_ip" "this"{
     domain_name_label = var.domain_name_label
     reverse_fqdn = var.reverse_fqdn
     tags = var.tags
-    public_ip_address_version = var.public_ip_address_version
     public_ip_prefix_id = var.public_ip_prefix_id
-    public_ip_address_allocation = var.public_ip_address_allocation
     idle_timeout_in_minutes = var.idle_timeout_in_minutes
-    ip_configuration_id = var.ip_configuration_id
     ip_tags = var.ip_tags
-    ip_configuration_name = var.ip_configuration_name
     sku_tier = var.sku_tier
-    reverse_fqdn_fqdn = var.reverse_fqdn_fqdn
+    ddos_protection_mode = var.ddos_protection_mode
+    ddos_protection_plan_id = var.ddos_protection_plan_id
+    edge_zone = var.edge_zone
+
 }
 resource "azurerm_management_lock" "this" {
   count      = var.lock.kind != "None" ? 1 : 0

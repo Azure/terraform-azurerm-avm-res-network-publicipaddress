@@ -17,7 +17,7 @@ variable "resource_group_name" {
 
 variable "name" {
   type        = string
-  description = "Nema of public IP address resource"
+  description = "Name of public IP address resource"
   validation {
     condition     = can(regex("^[a-z0-9-]{3,24}$", var.name))
     error_message = "The name must be between 3 and 24 characters long and can only contain lowercase letters, numbers and dashes."
@@ -28,6 +28,66 @@ variable "location" {
   type        = string
   description = "The Azure location where the resources will be deployed."
 }
+
+variable "zones" {
+  type        = set(number)
+  description = "A set of availability zones to use."
+  default     = [1,2,3]
+}
+
+variable "sku" {
+  type        = string
+  description = "The SKU of the public IP address."
+  default     = "Standard"
+  validation {
+    condition     = can(regex("^(Basic|Standard)$", var.sku))
+    error_message = "The SKU must be either 'Basic' or 'Standard'."
+  }
+  
+}
+
+variable "sku_tier" {
+  type        = string
+  description = "The tier of the SKU of the public IP address."
+  default     = "Regional" #check this with Seif
+  validation {
+    condition     = can(regex("^(Global|Regional)$", var.sku_tier))
+    error_message = "The SKU tier must be either 'Global' or 'Regional'."
+  }
+}
+
+variable "ip_version" {
+  type        = string
+  description = "The IP version to use."
+  default     = "IPv4"
+  validation {
+    condition     = can(regex("^(IPv4|IPv6)$", var.ip_version))
+    error_message = "The IP version must be either 'IPv4' or 'IPv6'."
+  }
+}
+
+variable "allocation_method" {
+  type        = string
+  description = "The allocation method to use."
+  default     = "Static"
+  validation {
+    condition     = can(regex("^(Static|Dynamic)$", var.allocation_method))
+    error_message = "The allocation method must be either 'Static' or 'Dynamic'."
+  }
+}
+
+variable "domain_name_label" {
+  type        = string
+  description = "The domain name label for the public IP address."
+  
+}
+
+variable "reverse_fqdn" {
+  type        = string
+  description = "The reverse FQDN for the public IP address. This must be a valid FQDN. If you specify a reverse FQDN, you cannot specify a DNS name label. Not all regions support this."
+}
+
+
 
 variable "tags" {
   type        = map(any)
