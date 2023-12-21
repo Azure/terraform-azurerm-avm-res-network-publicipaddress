@@ -103,12 +103,10 @@ variable "idle_timeout_in_minutes" {
   }
   
 }
-
 variable "ip_tags" {
-  type        = list(string)
-  description = "A list of IP tags associated with the public IP address."
-  default     = []
-  
+  type        = map(string)
+  description = "The IP tags for the public IP address"
+  default     = {}
 }
 variable "ddos_protection_mode" {
   type        = string
