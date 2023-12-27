@@ -1,23 +1,3 @@
-terraform {
-  required_version = ">= 1.0.0"
-  required_providers {
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = ">= 3.7.0, < 4.0.0"
-    }
-  }
-}
-
-variable "enable_telemetry" {
-  type        = bool
-  default     = true
-  description = <<DESCRIPTION
-This variable controls whether or not telemetry is enabled for the module.
-For more information see https://aka.ms/avm/telemetryinfo.
-If it is set to false, then no telemetry will be collected.
-DESCRIPTION
-}
-
 # This ensures we have unique CAF compliant names for our resources.
 module "naming" {
   source  = "Azure/naming/azurerm"
@@ -27,13 +7,30 @@ module "naming" {
 # This is required for resource modules
 resource "azurerm_resource_group" "this" {
   name     = module.naming.resource_group.name_unique
-  location = "MYLOCATION"
+  location = var.rg_location
 }
 
 # This is the module call
-module "MYMODULE" {
+module "PublicIPAddress" {
   source = "../../"
   # source             = "Azure/avm-<res/ptn>-<name>/azurerm"
-  enable_telemetry = var.enable_telemetry
-  # ...
+  enable_telemetry    = var.enable_telemetry
+  resource_group_name = azurerm_resource_group.this.name
+  name                = module.naming.network_public_ip_address.name_unique
+  location = var.location
+  allocation_method = var.allocation_method
+  sku = var.sku
+  zones = var.zones
+  ip_version = var.ip_version
+  domain_name_label = var.domain_name_label
+  reverse_fqdn = var.reverse_fqdn
+  tags = var.tags
+  public_ip_prefix_id = var.public_ip_prefix_id
+  idle_timeout_in_minutes = var.idle_timeout_in_minutes
+  ip_tags = var.ip_tags
+  sku_tier = var.sku_tier
+  ddos_protection_mode = var.ddos_protection_mode
+  ddos_protection_plan_id = var.ddos_protection_plan_id
+  edge_zone = var.edge_zone
 }
+
