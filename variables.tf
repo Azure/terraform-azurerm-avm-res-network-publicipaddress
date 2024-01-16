@@ -79,18 +79,19 @@ variable "allocation_method" {
 variable "domain_name_label" {
   type        = string
   description = "The domain name label for the public IP address."
-  
+default = null
 }
 
 variable "reverse_fqdn" {
   type        = string
   description = "The reverse FQDN for the public IP address. This must be a valid FQDN. If you specify a reverse FQDN, you cannot specify a DNS name label. Not all regions support this."
+default = null
 }
 
 variable "public_ip_prefix_id" {
   type        = string
   description = "The ID of the public IP prefix to associate with the public IP address."
-  
+  default = null
 }
 
 variable "idle_timeout_in_minutes" {
@@ -111,9 +112,9 @@ variable "ip_tags" {
 variable "ddos_protection_mode" {
   type        = string
   description = "The DDoS protection mode to use."
-  default     = "Standard"
+  default     = "VirtualNetworkInherited"
   validation {
-    condition     = can(regex("^(Basic|Standard)$", var.ddos_protection_mode))
+    condition     = can(regex("^(Disabled|Enabled|VirtualNetworkInherited)$", var.ddos_protection_mode))
     error_message = "The DDoS protection mode must be either 'Basic' or 'Standard'."
   }
   
@@ -122,13 +123,13 @@ variable "ddos_protection_mode" {
 variable "ddos_protection_plan_id" {
   type        = string
   description = "The ID of the DDoS protection plan to associate with the public IP address. This is required if `ddos_protection_mode` is set to `Standard`."
-  
+  default = null
 }
 
 variable "edge_zone" {
   type        = string
   description = "The edge zone to use for the public IP address. This is required if `sku_tier` is set to `Global`."
-  
+  default = null
 }
 
 variable "tags" {
