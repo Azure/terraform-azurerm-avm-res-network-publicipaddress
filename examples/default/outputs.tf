@@ -4,3 +4,4 @@ output "Created_resource" {
 output "Assigned_IP_Address" {
     value = module.PublicIPAddress.public_ip_address
 }
+

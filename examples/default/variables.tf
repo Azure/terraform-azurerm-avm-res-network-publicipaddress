@@ -23,3 +23,6 @@ variable "location" {
   default = "eastus"
 }
 
+
+
+
