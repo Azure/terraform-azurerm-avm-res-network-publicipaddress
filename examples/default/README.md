@@ -1,61 +1,72 @@
 <!-- BEGIN_TF_DOCS -->
-# terraform-azurerm-avm-res-network-ddosprotectionplan
+# Default example
 
-Module to enable DDoS protection plan in Azure
+This deploys the module in its simplest form.
+
+```hcl
+# This ensures we have unique CAF compliant names for our resources.
+module "naming" {
+  source  = "Azure/naming/azurerm"
+  version = "0.4.0"
+}
+
+# This is required for resource modules
+resource "azurerm_resource_group" "this" {
+  name     = module.naming.resource_group.name_unique
+  location = var.rg_location
+}
+
+# This is the module call
+module "PublicIPAddress" {
+  source = "../../"
+  # source             = "Azure/avm-<res/ptn>-<name>/azurerm"
+  enable_telemetry    = var.enable_telemetry
+  resource_group_name = azurerm_resource_group.this.name
+  name                = module.naming.public_ip.name_unique
+  location = var.location
+  #allocation_method = var.allocation_method
+  #sku = var.sku
+  #zones = var.zones
+  #ip_version = var.ip_version
+  #domain_name_label = var.domain_name_label
+  #reverse_fqdn = var.reverse_fqdn
+  #tags = var.tags
+  #public_ip_prefix_id = var.public_ip_prefix_id
+  #idle_timeout_in_minutes = var.idle_timeout_in_minutes
+  #ip_tags = var.ip_tags
+  #sku_tier = var.sku_tier
+  #ddos_protection_mode = var.ddos_protection_mode
+  #ddos_protection_plan_id = var.ddos_protection_plan_id
+  #edge_zone = var.edge_zone
+}
+
+```
 
 <!-- markdownlint-disable MD033 -->
 ## Requirements
 
 The following requirements are needed by this module:
 
-- <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) (>= 1.6.0)
+- <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) (>= 1.0.0)
 
-- <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) (>= 3.71.0)
-
-- <a name="requirement_random"></a> [random](#requirement\_random) (>= 3.5.0)
-
-- <a name="requirement_time"></a> [time](#requirement\_time) (>= 0.9.1)
+- <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) (>= 3.7.0, < 4.0.0)
 
 ## Providers
 
 The following providers are used by this module:
 
-- <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) (>= 3.71.0)
-
-- <a name="provider_random"></a> [random](#provider\_random) (>= 3.5.0)
+- <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) (>= 3.7.0, < 4.0.0)
 
 ## Resources
 
 The following resources are used by this module:
 
-- [azurerm_management_lock.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/management_lock) (resource)
-- [azurerm_network_ddos_protection_plan.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/network_ddos_protection_plan) (resource)
-- [azurerm_resource_group_template_deployment.telemetry](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group_template_deployment) (resource)
-- [azurerm_role_assignment.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/role_assignment) (resource)
-- [random_id.telem](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/id) (resource)
+- [azurerm_resource_group.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/resource_group) (resource)
 
 <!-- markdownlint-disable MD013 -->
 ## Required Inputs
 
-The following input variables are required:
-
-### <a name="input_location"></a> [location](#input\_location)
-
-Description: The Azure location where the resources will be deployed.
-
-Type: `string`
-
-### <a name="input_name"></a> [name](#input\_name)
-
-Description: the name of the ddos protection plan
-
-Type: `string`
-
-### <a name="input_resource_group_name"></a> [resource\_group\_name](#input\_resource\_group\_name)
-
-Description: The resource group where the resources will be deployed.
-
-Type: `string`
+No required inputs.
 
 ## Optional Inputs
 
@@ -71,60 +82,50 @@ Type: `bool`
 
 Default: `true`
 
-### <a name="input_lock"></a> [lock](#input\_lock)
+### <a name="input_location"></a> [location](#input\_location)
 
-Description: The lock level to apply to the ddos protection plan. Default is `None`. Possible values are `None`, `CanNotDelete`, and `ReadOnly`.
+Description: The Azure location where the resources will be deployed.
 
-Type:
+Type: `string`
 
-```hcl
-object({
-    name = optional(string, null)
-    kind = optional(string, "None")
-  })
-```
+Default: `"eastus"`
 
-Default: `{}`
+### <a name="input_rg_location"></a> [rg\_location](#input\_rg\_location)
 
-### <a name="input_role_assignments"></a> [role\_assignments](#input\_role\_assignments)
+Description: This variable defines the Azure region where the resource group will be created.  
+The default value is "eastus".
 
-Description: n/a
+Type: `string`
 
-Type:
-
-```hcl
-map(object({
-    role_definition_id_or_name             = string
-    principal_id                           = string
-    description                            = optional(string, null)
-    skip_service_principal_aad_check       = optional(bool, false)
-    condition                              = optional(string, null)
-    condition_version                      = optional(string, null)
-    delegated_managed_identity_resource_id = optional(string, null)
-  }))
-```
-
-Default: `{}`
-
-### <a name="input_tags"></a> [tags](#input\_tags)
-
-Description: Map of tags to assign to the ddos protection plan.
-
-Type: `map(any)`
-
-Default: `null`
+Default: `"eastus"`
 
 ## Outputs
 
 The following outputs are exported:
 
-### <a name="output_resource"></a> [resource](#output\_resource)
+### <a name="output_Assigned_IP_Address"></a> [Assigned\_IP\_Address](#output\_Assigned\_IP\_Address)
 
-Description: The ddos protection plan resource.
+Description: n/a
+
+### <a name="output_Created_resource"></a> [Created\_resource](#output\_Created\_resource)
+
+Description: n/a
 
 ## Modules
 
-No modules.
+The following Modules are called:
+
+### <a name="module_PublicIPAddress"></a> [PublicIPAddress](#module\_PublicIPAddress)
+
+Source: ../../
+
+Version:
+
+### <a name="module_naming"></a> [naming](#module\_naming)
+
+Source: Azure/naming/azurerm
+
+Version: 0.4.0
 
 <!-- markdownlint-disable-next-line MD041 -->
 ## Data Collection
