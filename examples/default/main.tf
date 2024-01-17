@@ -17,7 +17,7 @@ module "PublicIPAddress" {
   enable_telemetry    = var.enable_telemetry
   resource_group_name = azurerm_resource_group.this.name
   name                = module.naming.public_ip.name_unique
-  location = var.location
+  location            = var.location
   #allocation_method = var.allocation_method
   #sku = var.sku
   #zones = var.zones
