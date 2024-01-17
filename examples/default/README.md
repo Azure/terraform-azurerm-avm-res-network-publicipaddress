@@ -1,7 +1,9 @@
 <!-- BEGIN_TF_DOCS -->
 # Default example
 
+
 This example shows how to deploy the module in its simplest configuration.
+
 
 ```hcl
 # This ensures we have unique CAF compliant names for our resources.
