@@ -19,7 +19,7 @@ jobs:
     name: get repos
     runs-on: ubuntu-latest
     env:
-      query: "terraform-azurerm-avm-res-keyvault"
+      query: "terraform-azurerm-avm-res-network-publicipaddress"
     outputs:
       repoarray: ${{ steps.graphql.outputs.repoarray }}
     steps:
