@@ -11,7 +11,7 @@ resource "azurerm_resource_group" "this" {
 }
 
 # This is the module call
-module "PublicIPAddress" {
+module "public_ip_address" {
   source = "../../"
   # source             = "Azure/avm-<res/ptn>-<name>/azurerm"
   enable_telemetry    = var.enable_telemetry
