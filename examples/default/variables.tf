@@ -19,8 +19,11 @@ DESCRIPTION
 
 variable "location" {
   type        = string
-  description = "The Azure location where the resources will be deployed."
   default     = "eastus"
+  description = <<DESCRIPTION
+This variable defines the Azure region where the resource will be created.
+The default value is "eastus".
+DESCRIPTION
 }
 
 
