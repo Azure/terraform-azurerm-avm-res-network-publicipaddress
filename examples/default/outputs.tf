@@ -1,7 +1,7 @@
-output "Created_resource" {
-    value = module.PublicIPAddress.public_ip_id
+output "created_resource" {
+  value = module.public_ip_address.public_ip_id
 }
-output "Assigned_IP_Address" {
-    value = module.PublicIPAddress.public_ip_address
+output "assigned_ip_address" {
+  value = module.public_ip_address.public_ip_address
 }
 

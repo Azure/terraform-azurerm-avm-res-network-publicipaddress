@@ -2,7 +2,7 @@
 
 output "public_ip_id" {
   description = "The ID of the created public IP address"
-  value       = azurerm_public_ip.this
+  value       = azurerm_public_ip.this.id
 }
 
 output "public_ip_address" {
