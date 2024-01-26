@@ -32,7 +32,7 @@ variable "location" {
 variable "zones" {
   type        = set(number)
   description = "A set of availability zones to use."
-  default     = [1,2,3]
+  default     = [1, 2, 3]
 }
 
 variable "sku" {
@@ -43,7 +43,7 @@ variable "sku" {
     condition     = can(regex("^(Basic|Standard)$", var.sku))
     error_message = "The SKU must be either 'Basic' or 'Standard'."
   }
-  
+
 }
 
 variable "sku_tier" {
@@ -79,19 +79,19 @@ variable "allocation_method" {
 variable "domain_name_label" {
   type        = string
   description = "The domain name label for the public IP address."
-default = null
+  default     = null
 }
 
 variable "reverse_fqdn" {
   type        = string
   description = "The reverse FQDN for the public IP address. This must be a valid FQDN. If you specify a reverse FQDN, you cannot specify a DNS name label. Not all regions support this."
-default = null
+  default     = null
 }
 
 variable "public_ip_prefix_id" {
   type        = string
   description = "The ID of the public IP prefix to associate with the public IP address."
-  default = null
+  default     = null
 }
 
 variable "idle_timeout_in_minutes" {
@@ -102,7 +102,7 @@ variable "idle_timeout_in_minutes" {
     condition     = can(regex("^[0-9]{1,4}$", var.idle_timeout_in_minutes))
     error_message = "The idle timeout must be between 1 and 4 digits long."
   }
-  
+
 }
 variable "ip_tags" {
   type        = map(string)
@@ -117,19 +117,19 @@ variable "ddos_protection_mode" {
     condition     = can(regex("^(Disabled|Enabled|VirtualNetworkInherited)$", var.ddos_protection_mode))
     error_message = "The DDoS protection mode must be either 'Basic' or 'Standard'."
   }
-  
+
 }
 
 variable "ddos_protection_plan_id" {
   type        = string
   description = "The ID of the DDoS protection plan to associate with the public IP address. This is required if `ddos_protection_mode` is set to `Standard`."
-  default = null
+  default     = null
 }
 
 variable "edge_zone" {
   type        = string
   description = "The edge zone to use for the public IP address. This is required if `sku_tier` is set to `Global`."
-  default = null
+  default     = null
 }
 
 variable "tags" {
