@@ -19,7 +19,7 @@ variable "name" {
   type        = string
   description = "Name of public IP address resource"
   validation {
-    condition     = can(regex("^[a-z0-9-]{3,24}$", var.name))
+    condition     = can(regex("^[a-zA-Z0-9]([a-zA-Z0-9._-]{0,78}[a-zA-Z0-9_])?$", var.name))
     error_message = "The name must be between 3 and 24 characters long and can only contain lowercase letters, numbers and dashes."
   }
 }
