@@ -1,9 +1,7 @@
 <!-- BEGIN_TF_DOCS -->
 # Default example
 
-
 This example shows how to deploy the module in its simplest configuration.
-
 
 ```hcl
 # This ensures we have unique CAF compliant names for our resources.
@@ -14,18 +12,18 @@ module "naming" {
 
 # This is required for resource modules
 resource "azurerm_resource_group" "this" {
-  name     = module.naming.resource_group.name_unique
   location = var.rg_location
+  name     = module.naming.resource_group.name_unique
 }
 
 # This is the module call
-module "PublicIPAddress" {
+module "public_ip_address" {
   source = "../../"
   # source             = "Azure/avm-<res/ptn>-<name>/azurerm"
   enable_telemetry    = var.enable_telemetry
   resource_group_name = azurerm_resource_group.this.name
   name                = module.naming.public_ip.name_unique
-  location = var.location
+  location            = var.location
   #allocation_method = var.allocation_method
   #sku = var.sku
   #zones = var.zones
@@ -86,7 +84,8 @@ Default: `true`
 
 ### <a name="input_location"></a> [location](#input\_location)
 
-Description: The Azure location where the resources will be deployed.
+Description: This variable defines the Azure region where the resource will be created.  
+The default value is "eastus".
 
 Type: `string`
 
@@ -105,11 +104,11 @@ Default: `"eastus"`
 
 The following outputs are exported:
 
-### <a name="output_Assigned_IP_Address"></a> [Assigned\_IP\_Address](#output\_Assigned\_IP\_Address)
+### <a name="output_assigned_ip_address"></a> [assigned\_ip\_address](#output\_assigned\_ip\_address)
 
 Description: n/a
 
-### <a name="output_Created_resource"></a> [Created\_resource](#output\_Created\_resource)
+### <a name="output_created_resource"></a> [created\_resource](#output\_created\_resource)
 
 Description: n/a
 
@@ -117,17 +116,17 @@ Description: n/a
 
 The following Modules are called:
 
-### <a name="module_PublicIPAddress"></a> [PublicIPAddress](#module\_PublicIPAddress)
-
-Source: ../../
-
-Version:
-
 ### <a name="module_naming"></a> [naming](#module\_naming)
 
 Source: Azure/naming/azurerm
 
 Version: 0.4.0
+
+### <a name="module_public_ip_address"></a> [public\_ip\_address](#module\_public\_ip\_address)
+
+Source: ../../
+
+Version:
 
 <!-- markdownlint-disable-next-line MD041 -->
 ## Data Collection
