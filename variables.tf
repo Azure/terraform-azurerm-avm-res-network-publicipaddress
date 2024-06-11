@@ -234,5 +234,5 @@ variable "tags" {
 variable "zones" {
   type        = set(number)
   default     = [1, 2, 3]
-  description = "A set of availability zones to use."
+  description = "(Optional) A set of availability zones to use. Defaults to '[1, 2, 3]'. Set to empty list ('[]') to disable availability zones. Changing this forces a new ressource to be created."
 }
