@@ -8,20 +8,11 @@ If it is set to false, then no telemetry will be collected.
 DESCRIPTION
 }
 
-variable "location" {
-  type        = string
-  default     = "eastus"
-  description = <<DESCRIPTION
-This variable defines the Azure region where the resource will be created.
-The default value is "eastus".
-DESCRIPTION
-}
-
 variable "rg_location" {
   type        = string
   default     = "eastus"
   description = <<DESCRIPTION
-This variable defines the Azure region where the resource group will be created.
+This variable defines the Azure region where the resource group and sample ressource will be created.
 The default value is "eastus".
 DESCRIPTION
 }

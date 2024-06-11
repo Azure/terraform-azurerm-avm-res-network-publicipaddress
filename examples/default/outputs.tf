@@ -1,7 +1,9 @@
-output "assigned_ip_address" {
-  value = module.public_ip_address.public_ip_address
+output "resource" {
+  description = "This is the full output for the resource."
+  value       = module.public_ip_address.resource
 }
 
-output "created_resource" {
-  value = module.public_ip_address.public_ip_id
+output "resource_id" {
+  description = "This is the resource ID of the created public IP"
+  value       = module.public_ip_address.resource_id
 }

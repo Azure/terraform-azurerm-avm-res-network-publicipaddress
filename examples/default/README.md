@@ -23,7 +23,7 @@ module "public_ip_address" {
   enable_telemetry    = var.enable_telemetry
   resource_group_name = azurerm_resource_group.this.name
   name                = module.naming.public_ip.name_unique
-  location            = var.location
+  location            = var.rg_location
   #allocation_method = var.allocation_method
   #sku = var.sku
   #zones = var.zones
@@ -82,18 +82,9 @@ Type: `bool`
 
 Default: `true`
 
-### <a name="input_location"></a> [location](#input\_location)
-
-Description: This variable defines the Azure region where the resource will be created.  
-The default value is "eastus".
-
-Type: `string`
-
-Default: `"eastus"`
-
 ### <a name="input_rg_location"></a> [rg\_location](#input\_rg\_location)
 
-Description: This variable defines the Azure region where the resource group will be created.  
+Description: This variable defines the Azure region where the resource group and sample ressource will be created.  
 The default value is "eastus".
 
 Type: `string`
@@ -104,13 +95,13 @@ Default: `"eastus"`
 
 The following outputs are exported:
 
-### <a name="output_assigned_ip_address"></a> [assigned\_ip\_address](#output\_assigned\_ip\_address)
+### <a name="output_resource"></a> [resource](#output\_resource)
 
-Description: n/a
+Description: This is the full output for the resource.
 
-### <a name="output_created_resource"></a> [created\_resource](#output\_created\_resource)
+### <a name="output_resource_id"></a> [resource\_id](#output\_resource\_id)
 
-Description: n/a
+Description: This is the resource ID of the created public IP
 
 ## Modules
 
