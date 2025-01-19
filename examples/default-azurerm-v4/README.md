@@ -1,12 +1,51 @@
 <!-- BEGIN_TF_DOCS -->
-# Default example
-
+# Default example for azurerm v4
 
 This example shows how to deploy the module in its simplest configuration.
 
-
 ```hcl
-# This ensures we have unique CAF compliant names for our resources.
+variable "enable_telemetry" {
+  type        = bool
+  default     = true
+  description = <<DESCRIPTION
+This variable controls whether or not telemetry is enabled for the module.
+For more information see https://aka.ms/avm/telemetryinfo.
+If it is set to false, then no telemetry will be collected.
+DESCRIPTION
+}
+
+variable "rg_location" {
+  type        = string
+  default     = "eastus"
+  description = <<DESCRIPTION
+This variable defines the Azure region where the resource group will be created.
+The default value is "eastus".
+DESCRIPTION
+}
+
+variable "location" {
+  type        = string
+  default     = "eastus"
+  description = <<DESCRIPTION
+This variable defines the Azure region where the resource will be created.
+The default value is "eastus".
+DESCRIPTION
+}
+
+terraform {
+  required_version = ">= 1.0.0"
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
+  }
+}
+
+provider "azurerm" {
+  features {}
+}
+
 module "naming" {
   source  = "Azure/naming/azurerm"
   version = "0.4.0"
@@ -14,18 +53,18 @@ module "naming" {
 
 # This is required for resource modules
 resource "azurerm_resource_group" "this" {
-  name     = module.naming.resource_group.name_unique
   location = var.rg_location
+  name     = module.naming.resource_group.name_unique
 }
 
 # This is the module call
-module "PublicIPAddress" {
+module "public_ip_address" {
   source = "../../"
   # source             = "Azure/avm-<res/ptn>-<name>/azurerm"
   enable_telemetry    = var.enable_telemetry
   resource_group_name = azurerm_resource_group.this.name
   name                = module.naming.public_ip.name_unique
-  location = var.location
+  location            = var.location
   #allocation_method = var.allocation_method
   #sku = var.sku
   #zones = var.zones
@@ -42,6 +81,12 @@ module "PublicIPAddress" {
   #edge_zone = var.edge_zone
 }
 
+output "created_resource" {
+  value = module.public_ip_address.public_ip_id
+}
+output "assigned_ip_address" {
+  value = module.public_ip_address.public_ip_address
+}
 ```
 
 <!-- markdownlint-disable MD033 -->
@@ -51,13 +96,7 @@ The following requirements are needed by this module:
 
 - <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) (>= 1.0.0)
 
-- <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) (>= 3.7.0, < 4.0.0)
-
-## Providers
-
-The following providers are used by this module:
-
-- <a name="provider_azurerm"></a> [azurerm](#provider\_azurerm) (>= 3.7.0, < 4.0.0)
+- <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) (~> 4.0)
 
 ## Resources
 
@@ -86,7 +125,8 @@ Default: `true`
 
 ### <a name="input_location"></a> [location](#input\_location)
 
-Description: The Azure location where the resources will be deployed.
+Description: This variable defines the Azure region where the resource will be created.  
+The default value is "eastus".
 
 Type: `string`
 
@@ -105,11 +145,11 @@ Default: `"eastus"`
 
 The following outputs are exported:
 
-### <a name="output_Assigned_IP_Address"></a> [Assigned\_IP\_Address](#output\_Assigned\_IP\_Address)
+### <a name="output_assigned_ip_address"></a> [assigned\_ip\_address](#output\_assigned\_ip\_address)
 
 Description: n/a
 
-### <a name="output_Created_resource"></a> [Created\_resource](#output\_Created\_resource)
+### <a name="output_created_resource"></a> [created\_resource](#output\_created\_resource)
 
 Description: n/a
 
@@ -117,17 +157,17 @@ Description: n/a
 
 The following Modules are called:
 
-### <a name="module_PublicIPAddress"></a> [PublicIPAddress](#module\_PublicIPAddress)
-
-Source: ../../
-
-Version:
-
 ### <a name="module_naming"></a> [naming](#module\_naming)
 
 Source: Azure/naming/azurerm
 
 Version: 0.4.0
+
+### <a name="module_public_ip_address"></a> [public\_ip\_address](#module\_public\_ip\_address)
+
+Source: ../../
+
+Version:
 
 <!-- markdownlint-disable-next-line MD041 -->
 ## Data Collection
