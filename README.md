@@ -77,7 +77,7 @@ Default: `"VirtualNetworkInherited"`
 
 ### <a name="input_ddos_protection_plan_id"></a> [ddos\_protection\_plan\_id](#input\_ddos\_protection\_plan\_id)
 
-Description: The ID of the DDoS protection plan to associate with the public IP address. This is required if `ddos_protection_mode` is set to `Standard`.
+Description: The ID of the DDoS protection plan to associate with the public IP address. This is required if `ddos_protection_mode` is set to `Enabled`.
 
 Type: `string`
 
