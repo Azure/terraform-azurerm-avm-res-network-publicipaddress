@@ -1,6 +1,3 @@
-# TODO: insert resources here.
-
-
 resource "azurerm_public_ip" "this" {
   allocation_method       = var.allocation_method
   location                = var.location
