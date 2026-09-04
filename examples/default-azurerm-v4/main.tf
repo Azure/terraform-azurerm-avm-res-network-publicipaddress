@@ -1,6 +1,3 @@
-
-
-
 terraform {
   required_version = ">= 1.0.0"
 
@@ -37,4 +34,3 @@ module "public_ip_address" {
   # source             = "Azure/avm-<res/ptn>-<name>/azurerm"
   enable_telemetry = var.enable_telemetry
 }
-
