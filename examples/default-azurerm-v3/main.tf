@@ -32,5 +32,5 @@ module "public_ip_address" {
   name                = module.naming.public_ip.name_unique
   resource_group_name = azurerm_resource_group.this.name
   # source             = "Azure/avm-<res/ptn>-<name>/azurerm"
-  enable_telemetry = false
+  enable_telemetry = var.enable_telemetry
 }
