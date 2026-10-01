@@ -1,6 +1,3 @@
-
-
-
 terraform {
   required_version = ">= 1.0.0"
 
@@ -36,4 +33,3 @@ module "public_ip_address" {
   resource_group_name = azurerm_resource_group.this.name
   enable_telemetry    = var.enable_telemetry
 }
-
