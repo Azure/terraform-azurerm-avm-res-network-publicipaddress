@@ -38,14 +38,14 @@ variable "ddos_protection_mode" {
 
   validation {
     condition     = can(regex("^(Disabled|Enabled|VirtualNetworkInherited)$", var.ddos_protection_mode))
-    error_message = "The DDoS protection mode must be either 'Basic' or 'Standard'."
+    error_message = "The DDoS protection mode must be either 'VirtualNetworkInherited', 'Enabled' or 'Disabled'."
   }
 }
 
 variable "ddos_protection_plan_id" {
   type        = string
   default     = null
-  description = "The ID of the DDoS protection plan to associate with the public IP address. This is required if `ddos_protection_mode` is set to `Standard`."
+  description = "The ID of the DDoS protection plan to associate with the public IP address. This is required if `ddos_protection_mode` is set to `Enabled`."
 }
 
 variable "diagnostic_settings" {
