@@ -9,11 +9,9 @@ This is a module developed as part of Terraform Azure Verified Modules project a
 
 The following requirements are needed by this module:
 
-- <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) (>= 1.0.0)
+- <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) (~> 1.9)
 
 - <a name="requirement_azapi"></a> [azapi](#requirement\_azapi) (~> 2.12)
-
-- <a name="requirement_azurerm"></a> [azurerm](#requirement\_azurerm) (>= 3.116, < 5.0)
 
 - <a name="requirement_modtm"></a> [modtm](#requirement\_modtm) (~> 0.3)
 
@@ -23,13 +21,16 @@ The following requirements are needed by this module:
 
 The following resources are used by this module:
 
-- [azurerm_management_lock.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/management_lock) (resource)
-- [azurerm_monitor_diagnostic_setting.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/monitor_diagnostic_setting) (resource)
-- [azurerm_public_ip.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/public_ip) (resource)
-- [azurerm_role_assignment.this](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/role_assignment) (resource)
+- [azapi_resource.diagnostic_setting](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
+- [azapi_resource.lock](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
+- [azapi_resource.role_assignment](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
+- [azapi_resource.this](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
+- [azapi_resource_action.tags](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource_action) (resource)
+- [azapi_update_resource.this](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/update_resource) (resource)
 - [modtm_telemetry.telemetry](https://registry.terraform.io/providers/azure/modtm/latest/docs/resources/telemetry) (resource)
 - [random_uuid.telemetry](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/uuid) (resource)
 - [azapi_client_config.telemetry](https://registry.terraform.io/providers/Azure/azapi/latest/docs/data-sources/client_config) (data source)
+- [azapi_resource.this](https://registry.terraform.io/providers/Azure/azapi/latest/docs/data-sources/resource) (data source)
 - [modtm_module_source.telemetry](https://registry.terraform.io/providers/azure/modtm/latest/docs/data-sources/module_source) (data source)
 
 <!-- markdownlint-disable MD013 -->
@@ -49,9 +50,11 @@ Description: Name of public IP address resource
 
 Type: `string`
 
-### <a name="input_resource_group_name"></a> [resource\_group\_name](#input\_resource\_group\_name)
+### <a name="input_parent_id"></a> [parent\_id](#input\_parent\_id)
 
-Description: The resource group where the resources will be deployed.
+Description: The fully-qualified ARM resource ID of the existing resource group into which the public IP address will be deployed, for example `/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-example`.
+
+This input is REQUIRED. Per TFRMFR1 a resource module accepts the existing parent scope as a fully-qualified ID and never constructs it; the module does not accept a `resource_group_name` alternative and does not create the parent scope.
 
 Type: `string`
 
@@ -151,6 +154,40 @@ Type: `number`
 
 Default: `4`
 
+### <a name="input_ignore_body_changes"></a> [ignore\_body\_changes](#input\_ignore\_body\_changes)
+
+Description: Body-relative paths to ignore for each AzAPI resource. Paths use dot notation.  
+Changes take effect only after apply. Ignored configuration is not sent to Azure  
+until the path is removed.
+
+- `network_public_ip_addresses` - Paths ignored on the public IP address resource.
+- `authorization_locks` - Paths ignored on the management lock resource.
+- `authorization_role_assignments` - Paths ignored on the role assignment resources.
+- `insights_diagnostic_settings` - Paths ignored on the diagnostic setting resources.
+
+> NOTE: non-empty values require Terraform 1.11 or later. The module collapses
+> an empty list to `null`, so the write-only argument stays absent at the
+> default and consumers on Terraform 1.9/1.10 are unaffected.
+
+> NOTE: `network_public_ip_addresses` reaches the CREATE-ONLY writer only. That
+> writer already ignores every body change after create (see `main.tf`), so the
+> field has almost no reach. The day-2 merge writer is an
+> `azapi_update_resource`, and azapi 2.13.0 does not implement
+> `ignore_body_changes` on that resource type at all.
+
+Type:
+
+```hcl
+object({
+    network_public_ip_addresses    = optional(list(string), [])
+    authorization_locks            = optional(list(string), [])
+    authorization_role_assignments = optional(list(string), [])
+    insights_diagnostic_settings   = optional(list(string), [])
+  })
+```
+
+Default: `{}`
+
 ### <a name="input_ip_tags"></a> [ip\_tags](#input\_ip\_tags)
 
 Description: The IP tags for the public IP address
@@ -173,13 +210,15 @@ Description: Controls the Resource Lock configuration for this resource. The fol
 
 - `kind` - (Required) The type of lock. Possible values are `\"CanNotDelete\"` and `\"ReadOnly\"`.
 - `name` - (Optional) The name of the lock. If not specified, a name will be generated based on the `kind` value. Changing this forces the creation of a new resource.
+- `notes` - (Optional) A note about the lock. If not specified, the module supplies the same note the AzureRM implementation used for the chosen `kind`.
 
 Type:
 
 ```hcl
 object({
-    kind = string
-    name = optional(string, null)
+    kind  = string
+    name  = optional(string, null)
+    notes = optional(string, null)
   })
 ```
 
@@ -193,6 +232,57 @@ Type: `string`
 
 Default: `null`
 
+### <a name="input_resource_types"></a> [resource\_types](#input\_resource\_types)
+
+Description: AzAPI resource types and API versions used by the module.
+
+- `network_public_ip_addresses` - Resource type and API version for the public IP address.
+- `authorization_locks` - Resource type and API version for the management lock.
+- `authorization_role_assignments` - Resource type and API version for role assignments.
+- `insights_diagnostic_settings` - Resource type and API version for diagnostic settings.
+- `resources_tags` - Resource type and API version for the tag replacement action.
+
+> NOTE: the defaults are deliberately the NEWEST versions embedded in the AzAPI
+> provider that this module resolves (2.13.0). `azapi`'s `MoveResourceState`
+> picks `candidateApiVersions[len-1]` after a lexicographic sort, so pinning the
+> newest version makes the `moved` upgrade plan show ZERO `type` drift. Changing
+> a default away from the newest embedded version reintroduces that drift on the
+> upgrade plan.
+
+Type:
+
+```hcl
+object({
+    network_public_ip_addresses    = optional(string, "Microsoft.Network/publicIPAddresses@2025-07-01")
+    authorization_locks            = optional(string, "Microsoft.Authorization/locks@2020-05-01")
+    authorization_role_assignments = optional(string, "Microsoft.Authorization/roleAssignments@2022-04-01")
+    insights_diagnostic_settings   = optional(string, "Microsoft.Insights/diagnosticSettings@2021-05-01-preview")
+    resources_tags                 = optional(string, "Microsoft.Resources/tags@2021-04-01")
+  })
+```
+
+Default: `{}`
+
+### <a name="input_retry"></a> [retry](#input\_retry)
+
+Description: The retry configuration applied to the underlying `azapi_resource` resources (public IP address, lock, role assignments, diagnostic settings, tags).
+
+- `error_message_regex` - (Optional) A list of regular expressions to match against error messages. If any of the regular expressions match, the request will be retried. Defaults to the two transient ARM errors a public IP address attracts while it is being attached to or detached from a load balancer, NAT gateway or NIC.
+- `interval_seconds` - (Optional) The base number of seconds to wait between retries. Defaults to the AzAPI provider default (`10`).
+- `max_interval_seconds` - (Optional) The maximum number of seconds to wait between retries. Defaults to the AzAPI provider default (`180`).
+
+Type:
+
+```hcl
+object({
+    error_message_regex  = optional(list(string), ["ReferencedResourceNotProvisioned", "AnotherOperationInProgress"])
+    interval_seconds     = optional(number, null)
+    max_interval_seconds = optional(number, null)
+  })
+```
+
+Default: `{}`
+
 ### <a name="input_reverse_fqdn"></a> [reverse\_fqdn](#input\_reverse\_fqdn)
 
 Description: The reverse FQDN for the public IP address. This must be a valid FQDN. If you specify a reverse FQDN, you cannot specify a DNS name label. Not all regions support this.
@@ -205,10 +295,11 @@ Default: `null`
 
 Description: A map of role assignments to create on the <RESOURCE>. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time.
 
+- `name` - (Optional) The name (a lowercase GUID) of the role assignment. If not set, a random UUID is generated. Existing role assignments migrated from the AzureRM implementation keep their server-assigned name; see the `lifecycle` note in `main.tf`.
 - `role_definition_id_or_name` - The ID or name of the role definition to assign to the principal.
 - `principal_id` - The ID of the principal to assign the role to.
 - `description` - (Optional) The description of the role assignment.
-- `skip_service_principal_aad_check` - (Optional) If set to true, skips the Azure Active Directory check for the service principal in the tenant. Defaults to false.
+- `skip_service_principal_aad_check` - (Optional) DEPRECATED -- has no effect under AzAPI. ARM has no equivalent request property; AzureRM implemented it as a client-side retry loop.
 - `condition` - (Optional) The condition which will be used to scope the role assignment.
 - `condition_version` - (Optional) The version of the condition syntax. Leave as `null` if you are not using a condition, if you are then valid values are '2.0'.
 - `delegated_managed_identity_resource_id` - (Optional) The delegated Azure Resource Id which contains a Managed Identity. Changing this forces a new resource to be created. This field is only used in cross-tenant scenario.
@@ -220,6 +311,7 @@ Type:
 
 ```hcl
 map(object({
+    name                                   = optional(string, null)
     role_definition_id_or_name             = string
     principal_id                           = string
     description                            = optional(string, null)
@@ -256,6 +348,30 @@ Description: (Optional) Tags of the resource.
 Type: `map(string)`
 
 Default: `null`
+
+### <a name="input_timeouts"></a> [timeouts](#input\_timeouts)
+
+Description: The timeouts applied to the underlying `azapi_resource` resources (public IP address, lock, role assignments, diagnostic settings).
+
+Each value must be a string parsable as a Go duration (for example `"30s"`, `"5m"`, `"1h30m"`). When `null`, this module falls back to the per-resource default that the AzureRM implementation used, so the migration is timeout-neutral. Supplying `null` for the whole object is equivalent to supplying every member as `null`.
+
+- `create` - (Optional) Timeout for create operations.
+- `delete` - (Optional) Timeout for delete operations.
+- `read` - (Optional) Timeout for read operations.
+- `update` - (Optional) Timeout for update operations.
+
+Type:
+
+```hcl
+object({
+    create = optional(string, null)
+    delete = optional(string, null)
+    read   = optional(string, null)
+    update = optional(string, null)
+  })
+```
+
+Default: `{}`
 
 ### <a name="input_zones"></a> [zones](#input\_zones)
 
@@ -295,7 +411,13 @@ Description: The ID of the created public IP address
 
 ## Modules
 
-No modules.
+The following Modules are called:
+
+### <a name="module_interfaces"></a> [interfaces](#module\_interfaces)
+
+Source: Azure/avm-utl-interfaces/azure
+
+Version: 0.7.0
 
 <!-- markdownlint-disable-next-line MD041 -->
 ## Data Collection
