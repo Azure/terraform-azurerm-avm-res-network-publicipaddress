@@ -205,8 +205,8 @@ run "seed_a_public_ip_with_dns_settings" {
   }
 
   assert {
-    condition     = local.pip_state_had_dns_settings
-    error_message = "The seeded state must carry dnsSettings, or the removal guard below is comparing against nothing."
+    condition     = local.pip_state_dns_label == "pip-unit-test"
+    error_message = "The seeded state must carry the expected domain name label, or the removal guard is comparing against nothing."
   }
 }
 

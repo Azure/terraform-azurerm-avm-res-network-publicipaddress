@@ -150,9 +150,6 @@ locals {
   pip_state_zones         = toset(try([for zone in azapi_resource.this.body.zones : tostring(zone)], []))
   pip_state_dns_label     = try(tostring(azapi_resource.this.body.properties.dnsSettings.domainNameLabel), null)
   pip_state_reverse_fqdn  = try(tostring(azapi_resource.this.body.properties.dnsSettings.reverseFqdn), null)
-  # Was `dnsSettings` present before and is it gone now? A merge writer cannot
-  # un-set it, so removal has to be refused rather than silently dropped.
-  pip_state_had_dns_settings = try(azapi_resource.this.body.properties.dnsSettings, null) != null
 }
 
 locals {
