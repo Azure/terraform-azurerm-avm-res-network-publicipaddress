@@ -20,8 +20,21 @@ What you need to know:
   removed afterwards.
 - **Outputs keep their names.** `public_ip_address` is `null` instead of `""` while a `Dynamic`
   public IP has no address allocated.
-- **Tags replace the whole tag set.** Tags placed on the public IP out of band are removed on the
-  next apply.
+- **Tag handling differs for `null` and `{}`.** `tags = null` disables the tag action and does not
+  clear tags. Set `tags = {}` to explicitly clear the complete tag set. When the action runs, it
+  replaces all tags with the configured map; it does not read or track out-of-band tag changes, and
+  an unrelated apply does not necessarily run it.
+- **DNS settings cannot be removed or switched in place.** The day-2 writer merges nested settings
+  and cannot remove an omitted `domain_name_label` or `reverse_fqdn`. The module rejects removing
+  either configured member or switching from one to the other on an existing public IP.
+- **Role-assignment principal type is preserved.** When
+  `skip_service_principal_aad_check = true` and `principal_type` is unset, the module sends
+  `principalType = "ServicePrincipal"` as the AzureRM implementation did. An explicitly configured
+  `principal_type` takes precedence.
+- **Lock-removal retries are targeted, not a teardown guarantee.** The default retry list includes
+  `ScopeLocked` for transient diagnostic-settings deletion failures while a lock is being removed.
+- **Use only the in-module state moves.** Use a normally refreshed plan and stop if it shows an
+  unexpected replacement.
 - **Minimum Terraform is now 1.9.** `parent_id` is validated with a provider-defined function.
 - **New optional inputs.** `resource_types`, `ignore_body_changes`, `retry` and `timeouts`. Their
   defaults preserve the previous behaviour.

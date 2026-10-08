@@ -224,6 +224,42 @@ run "changing_the_domain_name_label_is_allowed" {
   }
 }
 
+run "switching_from_a_domain_label_to_reverse_fqdn_is_refused" {
+  command   = plan
+  state_key = "dnssettings"
+
+  variables {
+    domain_name_label = null
+    reverse_fqdn      = "example.contoso.com."
+  }
+
+  # AzureRM replaces the DNS settings object when either field changes.
+  # azapi_update_resource manages a subset and cannot remove the omitted
+  # nested field, so the switch must not silently leave both fields configured.
+  expect_failures = [azapi_update_resource.this]
+}
+
+run "seed_a_public_ip_with_reverse_fqdn" {
+  command   = apply
+  state_key = "dnssettings_reverse"
+
+  variables {
+    reverse_fqdn = "example.contoso.com."
+  }
+}
+
+run "switching_from_reverse_fqdn_to_a_domain_label_is_refused" {
+  command   = plan
+  state_key = "dnssettings_reverse"
+
+  variables {
+    reverse_fqdn      = null
+    domain_name_label = "pip-unit-test"
+  }
+
+  expect_failures = [azapi_update_resource.this]
+}
+
 run "removing_the_dns_settings_is_refused" {
   command   = plan
   state_key = "dnssettings"

@@ -312,6 +312,100 @@ run "an_empty_tag_map_still_clears_tags" {
   }
 }
 
+run "a_tag_action_uses_the_consumer_timeouts" {
+  command = plan
+
+  variables {
+    tags = { scenario = "unit" }
+    timeouts = {
+      create = "3m"
+      read   = "1m"
+      update = "4m"
+      delete = "2m"
+    }
+  }
+
+  assert {
+    condition = (
+      azapi_resource_action.tags[0].timeouts.create == "3m" &&
+      azapi_resource_action.tags[0].timeouts.read == "1m" &&
+      azapi_resource_action.tags[0].timeouts.update == "4m" &&
+      azapi_resource_action.tags[0].timeouts.delete == "2m"
+    )
+    error_message = "The tag action must receive all consumer timeout overrides."
+  }
+}
+
+run "transitioning_tags_to_null_does_not_issue_a_clear" {
+  command   = apply
+  state_key = "tags_to_null"
+
+  variables {
+    tags = { managed = "value" }
+  }
+}
+
+run "null_tags_remove_the_writer_without_clearing_the_remote_tag_set" {
+  command   = plan
+  state_key = "tags_to_null"
+
+  variables {
+    tags = null
+  }
+
+  assert {
+    condition     = length(azapi_resource_action.tags) == 0
+    error_message = "Changing tags from a map to null removes the action without an Azure request; use an explicit empty map to clear tags."
+  }
+}
+
+run "skip_service_principal_aad_check_preserves_principal_type_precedence" {
+  command = plan
+
+  variables {
+    role_assignments = {
+      default_service_principal_type = {
+        role_definition_id_or_name       = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000001"
+        principal_id                     = "00000000-0000-0000-0000-000000000002"
+        skip_service_principal_aad_check = true
+      }
+      explicit_principal_type = {
+        role_definition_id_or_name       = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000001"
+        principal_id                     = "00000000-0000-0000-0000-000000000003"
+        skip_service_principal_aad_check = true
+        principal_type                   = "User"
+      }
+    }
+  }
+
+  assert {
+    condition     = azapi_resource.role_assignment["default_service_principal_type"].body.properties.principalType == "ServicePrincipal"
+    error_message = "When principal_type is omitted, skip_service_principal_aad_check must preserve AzureRM's ServicePrincipal request value."
+  }
+
+  assert {
+    condition     = azapi_resource.role_assignment["explicit_principal_type"].body.properties.principalType == "User"
+    error_message = "An explicit principal_type must take precedence over the compatibility behavior of skip_service_principal_aad_check."
+  }
+}
+
+run "default_retry_includes_scope_locked_for_lock_removal_races" {
+  command = plan
+
+  variables {
+    diagnostic_settings = {
+      logs = {
+        workspace_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.OperationalInsights/workspaces/log-test"
+      }
+    }
+  }
+
+  assert {
+    condition     = contains(azapi_resource.diagnostic_setting["logs"].retry.error_message_regex, "ScopeLocked")
+    error_message = "The default retry list must reach diagnostic settings and include ScopeLocked for transient deletion failures while locks are removed."
+  }
+}
+
 # ---------------------------------------------------------------------------
 # THE LOCK. `avm-utl-interfaces` returns a null name and no `notes`; both are
 # restored here, because the lock's NAME is part of its resource ID and a

@@ -93,6 +93,67 @@ run "public_ip_prefix_id_must_be_a_public_ip_prefix_id" {
   expect_failures = [var.public_ip_prefix_id]
 }
 
+run "diagnostic_workspace_id_must_be_a_workspace_id" {
+  command = plan
+
+  variables {
+    diagnostic_settings = {
+      invalid = {
+        workspace_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.Network/publicIPAddresses/pip-test"
+      }
+    }
+  }
+
+  expect_failures = [var.diagnostic_settings]
+}
+
+run "diagnostic_storage_id_must_be_a_storage_account_id" {
+  command = plan
+
+  variables {
+    diagnostic_settings = {
+      invalid = {
+        storage_account_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.Network/publicIPAddresses/pip-test"
+      }
+    }
+  }
+
+  expect_failures = [var.diagnostic_settings]
+}
+
+run "diagnostic_event_hub_id_must_be_an_authorization_rule_id" {
+  command = plan
+
+  variables {
+    diagnostic_settings = {
+      invalid = {
+        event_hub_authorization_rule_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.Network/publicIPAddresses/pip-test"
+      }
+    }
+  }
+
+  expect_failures = [var.diagnostic_settings]
+}
+
+run "diagnostic_resource_ids_of_the_expected_types_are_valid" {
+  command = plan
+
+  variables {
+    diagnostic_settings = {
+      valid = {
+        workspace_resource_id                    = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.OperationalInsights/workspaces/log-test"
+        storage_account_resource_id              = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.Storage/storageAccounts/logstorage"
+        event_hub_authorization_rule_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.EventHub/namespaces/logs/authorizationRules/send"
+      }
+    }
+  }
+
+  assert {
+    condition     = length(var.diagnostic_settings) == 1
+    error_message = "Valid IDs for each supported typed diagnostic destination must remain accepted."
+  }
+}
+
 # Both ID validations must tolerate their documented `null` default, or every
 # consumer who does not use DDoS or prefixes is broken by the upgrade.
 run "null_is_still_valid_for_the_optional_resource_ids" {

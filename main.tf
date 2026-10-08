@@ -299,14 +299,16 @@ resource "azapi_update_resource" "this" {
       error_message = "`zones` cannot change in place: the live public IP address was created in availability zones [${join(", ", sort(tolist(local.pip_state_zones)))}] and the configuration now asks for [${join(", ", sort(tolist(local.pip_config_zones)))}]. AzureRM marked `zones` ForceNew (public_ip_resource.go L178, commonschema.ZonesMultipleOptionalForceNew). Run terraform apply -replace='module.<path>.azapi_resource.this' if you accept that the public IP address WILL change."
     }
     # 🔴 NOT A FORCENEW GUARD -- a merge-writer limitation guard.
-    # AzureRM set `payload.Properties.DnsSettings = nil` when the consumer
-    # cleared both `domain_name_label` and `reverse_fqdn`, and ARM removed the
-    # DNS settings. A merge writer cannot un-set a member, so the removal would
-    # be a SILENT no-op with a plan that looked like it worked. It is refused
-    # instead.
+    # AzureRM replaced the complete DNS settings object whenever either input
+    # changed. A merge writer cannot remove an omitted nested member, so refuse
+    # removal of either stateful member, including a switch between the inputs.
     precondition {
-      condition     = local.pip_state_had_dns_settings ? local.public_ip_dns_settings != null : true
-      error_message = "`domain_name_label` / `reverse_fqdn` cannot be REMOVED in place: the live public IP address has DNS settings and the configuration now clears both. This module's day-2 writer merges, and a merge cannot un-set a member, so the removal would be silently ignored. Remove the DNS settings out of band, or replace the resource with terraform apply -replace='module.<path>.azapi_resource.this' if you accept that the public IP address WILL change."
+      condition = (
+        local.pip_state_dns_label == null || local.pip_config_dns_label != null
+        ) && (
+        local.pip_state_reverse_fqdn == null || local.pip_config_reverse_fqdn != null
+      )
+      error_message = "`domain_name_label` and `reverse_fqdn` cannot be removed or switched in place when the live public IP has that DNS member. This module's day-2 writer merges and cannot un-set an omitted nested member. Remove the member out of band, or replace the resource with terraform apply -replace='module.<path>.azapi_resource.this' if you accept that the public IP address WILL change."
     }
   }
 }
@@ -335,9 +337,9 @@ resource "azapi_update_resource" "this" {
 # what AzureRM did.
 #
 # ⚠️ OUT-OF-BAND TAGS ARE NOT DETECTED: this resource's Read issues no GET, so
-# a tag set outside Terraform never appears as drift -- it is simply
-# overwritten on the next apply. Weaker than AzureRM's drift detection, and a
-# named difference in the upgrade notes.
+# a tag set outside Terraform never appears as drift. When this action is
+# created or updated it replaces the complete tag set, but an unrelated apply
+# does not necessarily execute it.
 #
 # 🔴 WHY `depends_on`. Two writes racing on one parent produce a 409
 # `AnotherOperationInProgress`. `depends_on` serialises them.
@@ -356,6 +358,13 @@ resource "azapi_resource_action" "tags" {
   # ✅ TFFR4: declared on every AzAPI resource, "even if empty".
   response_export_values = []
   retry                  = var.retry
+
+  timeouts {
+    create = local.timeouts.network_public_ip_addresses.create
+    delete = local.timeouts.network_public_ip_addresses.delete
+    read   = local.timeouts.network_public_ip_addresses.read
+    update = local.timeouts.network_public_ip_addresses.update
+  }
 
   depends_on = [azapi_update_resource.this]
 }
@@ -442,12 +451,14 @@ resource "azapi_resource" "lock" {
 
 # ---------------------------------------------------------------------------
 # ROLE ASSIGNMENTS. A plain single writer; the body comes from
-# `avm-utl-interfaces` unchanged.
+# `avm-utl-interfaces`, with AzureRM's `skip_service_principal_aad_check`
+# request-body compatibility fallback restored below.
 #
-# ⚠️ `skip_service_principal_aad_check` HAS NO EFFECT UNDER AZAPI. ARM has no
-# request property for it; AzureRM implemented it as a client-side retry loop
-# around AAD replication lag. Use `var.retry` instead. The attribute is kept on
-# the variable so consumers do not have to edit their configuration.
+# ⚠️ ARM has no request property named `skip_service_principal_aad_check`.
+# AzureRM also used this flag to send `principalType = ServicePrincipal` when
+# `principal_type` was unset. Preserve that behavior; an explicit
+# `principal_type` remains authoritative. Retry behavior is configured through
+# `var.retry`.
 # ---------------------------------------------------------------------------
 resource "azapi_resource" "role_assignment" {
   for_each = module.interfaces.role_assignments_azapi
@@ -455,7 +466,14 @@ resource "azapi_resource" "role_assignment" {
   name      = each.value.name
   parent_id = azapi_resource.this.id
   type      = var.resource_types.authorization_role_assignments
-  body      = each.value.body
+  body = merge(each.value.body, {
+    properties = merge(
+      each.value.body.properties,
+      var.role_assignments[each.key].skip_service_principal_aad_check && var.role_assignments[each.key].principal_type == null ? {
+        principalType = "ServicePrincipal"
+      } : {},
+    )
+  })
   ignore_body_changes = length(var.ignore_body_changes.authorization_role_assignments) > 0 ? (
     var.ignore_body_changes.authorization_role_assignments
   ) : null
@@ -573,17 +591,16 @@ resource "azapi_resource" "diagnostic_setting" {
 # boundary, same keys, so every move is a whole-resource move and the consumer
 # only bumps the module version.
 #
-# 🔴 PLAN WITH A NORMAL REFRESH. `terraform plan -refresh=false` is NOT
-# supported for the upgrade plan and never will be: azapi's
-# `MoveResourceState` writes only ID, Name, ParentID and Type, leaving
-# `location` null, and `ModifyPlan` then reads that null and marks the resource
-# for REPLACEMENT. A refreshing plan repairs it -- the Read backfills
-# `location` and re-flattens `body` once. This was measured on a PUBLIC IP
-# (azapi#1227): refreshing plan `0 to add, 2 to change, 0 to destroy`;
+# 🔴 PLAN WITH A NORMAL REFRESH. Do not use `terraform plan -refresh=false` for
+# the upgrade. AzAPI's `MoveResourceState` writes only ID, Name, ParentID and
+# Type, leaving `location` null, and `ModifyPlan` then reads that null and
+# marks the resource for REPLACEMENT. A refreshing plan repairs it -- the Read
+# backfills `location` and re-flattens `body` once. This was measured on a
+# PUBLIC IP (azapi#1227): refreshing plan `0 to add, 2 to change, 0 to destroy`;
 # `-refresh=false` `1 to add, 1 to change, 1 to destroy` with
-# `+ location = "eastus" # forces replacement`. The same issue makes `moved`
-# unusable in sovereign clouds; those consumers need the
-# `removed` + `import` fallback from the upgrade guide.
+# `+ location = "eastus" # forces replacement`. The supported state migration
+# path is the in-module `moved` blocks below; sovereign-cloud behavior has not
+# been established by that public-cloud measurement.
 #
 # 🔴 THE MERGE WRITER, THE TAGS ACTION AND THE READ-ONLY DATA SOURCE HAVE NO
 # `moved` BLOCK because they have no AzureRM predecessor. They are ADDED by the

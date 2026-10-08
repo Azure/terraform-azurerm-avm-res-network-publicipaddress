@@ -108,6 +108,15 @@ DESCRIPTION
     )
     error_message = "At least one of `workspace_resource_id`, `storage_account_resource_id`, `marketplace_partner_resource_id`, or `event_hub_authorization_rule_resource_id`, must be set."
   }
+  validation {
+    condition = alltrue([
+      for _, v in var.diagnostic_settings :
+      (v.workspace_resource_id == null || can(provider::azapi::parse_resource_id("Microsoft.OperationalInsights/workspaces", v.workspace_resource_id))) &&
+      (v.storage_account_resource_id == null || can(provider::azapi::parse_resource_id("Microsoft.Storage/storageAccounts", v.storage_account_resource_id))) &&
+      (v.event_hub_authorization_rule_resource_id == null || can(provider::azapi::parse_resource_id("Microsoft.EventHub/namespaces/authorizationRules", v.event_hub_authorization_rule_resource_id)))
+    ])
+    error_message = "`workspace_resource_id`, `storage_account_resource_id`, and `event_hub_authorization_rule_resource_id` must be valid resource IDs of their respective Azure resource types."
+  }
 }
 
 variable "domain_name_label" {
@@ -263,15 +272,15 @@ DESCRIPTION
 
 variable "retry" {
   type = object({
-    error_message_regex  = optional(list(string), ["ReferencedResourceNotProvisioned", "AnotherOperationInProgress"])
+    error_message_regex  = optional(list(string), ["ReferencedResourceNotProvisioned", "AnotherOperationInProgress", "ScopeLocked"])
     interval_seconds     = optional(number, null)
     max_interval_seconds = optional(number, null)
   })
   default     = {}
   description = <<DESCRIPTION
-The retry configuration applied to the underlying `azapi_resource` resources (public IP address, lock, role assignments, diagnostic settings, tags).
+The retry configuration applied to the underlying AzAPI resources (public IP address, lock, role assignments, diagnostic settings, tags).
 
-- `error_message_regex` - (Optional) A list of regular expressions to match against error messages. If any of the regular expressions match, the request will be retried. Defaults to the two transient ARM errors a public IP address attracts while it is being attached to or detached from a load balancer, NAT gateway or NIC.
+- `error_message_regex` - (Optional) A list of regular expressions to match against error messages. If any of the regular expressions match, the request will be retried. Defaults to transient ARM errors associated with public IP associations and `ScopeLocked` while a lock-removal race resolves.
 - `interval_seconds` - (Optional) The base number of seconds to wait between retries. Defaults to the AzAPI provider default (`10`).
 - `max_interval_seconds` - (Optional) The maximum number of seconds to wait between retries. Defaults to the AzAPI provider default (`180`).
 DESCRIPTION
@@ -303,7 +312,7 @@ A map of role assignments to create on the <RESOURCE>. The map key is deliberate
 - `role_definition_id_or_name` - The ID or name of the role definition to assign to the principal.
 - `principal_id` - The ID of the principal to assign the role to.
 - `description` - (Optional) The description of the role assignment.
-- `skip_service_principal_aad_check` - (Optional) DEPRECATED -- has no effect under AzAPI. ARM has no equivalent request property; AzureRM implemented it as a client-side retry loop.
+- `skip_service_principal_aad_check` - (Optional, deprecated) Preserves the AzureRM request behavior by setting `principalType` to `ServicePrincipal` when `principal_type` is unset. If `principal_type` is explicitly set, that value takes precedence. Retry behavior is configured with the module's `retry` input.
 - `condition` - (Optional) The condition which will be used to scope the role assignment.
 - `condition_version` - (Optional) The version of the condition syntax. Leave as `null` if you are not using a condition, if you are then valid values are '2.0'.
 - `delegated_managed_identity_resource_id` - (Optional) The delegated Azure Resource Id which contains a Managed Identity. Changing this forces a new resource to be created. This field is only used in cross-tenant scenario.

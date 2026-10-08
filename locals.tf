@@ -138,6 +138,8 @@ locals {
   pip_config_sku_name     = try(lower(tostring(local.public_ip_body.sku.name)), null)
   pip_config_sku_tier     = try(lower(tostring(local.public_ip_body.sku.tier)), null)
   pip_config_zones        = toset(try([for zone in local.public_ip_body.zones : tostring(zone)], []))
+  pip_config_dns_label    = try(tostring(local.public_ip_body.properties.dnsSettings.domainNameLabel), null)
+  pip_config_reverse_fqdn = try(tostring(local.public_ip_body.properties.dnsSettings.reverseFqdn), null)
   pip_state_ddos_plan_id  = try(lower(tostring(azapi_resource.this.body.properties.ddosSettings.ddosProtectionPlan.id)), null)
   pip_state_edge_zone     = try(lower(tostring(azapi_resource.this.body.extendedLocation.name)), null)
   pip_state_ip_tags       = toset(try([for ip_tag in azapi_resource.this.body.properties.ipTags : "${ip_tag.ipTagType}=${ip_tag.tag}"], []))
@@ -146,6 +148,8 @@ locals {
   pip_state_sku_name      = try(lower(tostring(azapi_resource.this.body.sku.name)), null)
   pip_state_sku_tier      = try(lower(tostring(azapi_resource.this.body.sku.tier)), null)
   pip_state_zones         = toset(try([for zone in azapi_resource.this.body.zones : tostring(zone)], []))
+  pip_state_dns_label     = try(tostring(azapi_resource.this.body.properties.dnsSettings.domainNameLabel), null)
+  pip_state_reverse_fqdn  = try(tostring(azapi_resource.this.body.properties.dnsSettings.reverseFqdn), null)
   # Was `dnsSettings` present before and is it gone now? A merge writer cannot
   # un-set it, so removal has to be refused rather than silently dropped.
   pip_state_had_dns_settings = try(azapi_resource.this.body.properties.dnsSettings, null) != null
