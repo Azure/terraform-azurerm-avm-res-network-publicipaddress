@@ -52,6 +52,40 @@ variables {
   parent_id        = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test"
 }
 
+# Provides a mock-created state seed for Test-PublicIpOutputPlan.ps1, which
+# replays this state through the real locked AzAPI provider without Azure calls.
+run "seed_public_ip_for_real_provider_output_plan" {
+  command   = apply
+  state_key = "real_provider_output_plan"
+
+  variables {
+    enable_telemetry = false
+    location         = "centralindia"
+    name             = "pip-output-plan-regression"
+    zones            = []
+    tags             = { test = "real-provider-output-plan" }
+    ignore_body_changes = {
+      network_public_ip_addresses = ["properties.idleTimeoutInMinutes"]
+    }
+    retry = {
+      error_message_regex  = ["RepairTestRetryable"]
+      interval_seconds     = 3
+      max_interval_seconds = 15
+    }
+    timeouts = {
+      create = "45m"
+      delete = "46m"
+      read   = "2m"
+      update = "44m"
+    }
+  }
+
+  assert {
+    condition     = azapi_resource.this.response_export_values == []
+    error_message = "The real-provider plan fixture must start from an empty exported output."
+  }
+}
+
 # ---------------------------------------------------------------------------
 # THE GENESIS BODY. What AzureRM's CREATE sent, member for member.
 # ---------------------------------------------------------------------------

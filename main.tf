@@ -79,16 +79,10 @@ resource "azapi_resource" "this" {
   parent_id = local.parent_id
   type      = var.resource_types.network_public_ip_addresses
   body      = local.public_ip_body
-  # ✅ TFFR8. The spec's own collapse-to-`null` form keeps the write-only
-  # argument ABSENT at the `[]` default, so a consumer below Terraform 1.11 is
-  # unaffected.
-  #
-  # 🔴 ITS REACH ON THIS ADDRESS IS ALMOST NIL, and that is a property of the
-  # writer split, not of the variable: azapi only consults
-  # `ignore_body_changes` when there is prior state AND the resource is taking
-  # the update path, and `body` is in the `ignore_changes` list below, so this
-  # address never takes that path. The day-2 merge writer, which does, has no
-  # such argument in azapi 2.13.0.
+  # TFFR8. Collapse the empty path list to null so the write-only argument is
+  # absent by default. Do not add it to lifecycle.ignore_changes: AzAPI stores
+  # it in private state, and ignoring it makes the planned value unknown, which
+  # in turn makes output unknown on every plan.
   ignore_body_changes = length(var.ignore_body_changes.network_public_ip_addresses) > 0 ? (
     var.ignore_body_changes.network_public_ip_addresses
   ) : null
@@ -172,7 +166,6 @@ resource "azapi_resource" "this" {
     ignore_changes = [
       body,
       identity,
-      ignore_body_changes,
       ignore_casing,
       ignore_missing_property,
       ignore_null_property,
