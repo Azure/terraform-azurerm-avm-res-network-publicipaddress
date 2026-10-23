@@ -54,19 +54,16 @@ module "interfaces" {
   # `>= 0.6, < 1.0` -- it was already floating to 0.7.0 on every `init
   # -upgrade`, which would let an unreviewed interfaces release change the lock
   # name, the role-assignment names or the diagnostic-setting body underneath a
-  # module whose `moved` blocks depend on all three. 0.7.0 is the version this
-  # migration was audited against.
-  version = "0.7.0"
+  # module whose `moved` blocks depend on all three. The managed-files sync raised the
+  # pin from 0.7.0 to 0.9.0; the offline tests ran against 0.9.0, Azure has not.
+  version = "0.9.0"
 
+  location            = var.location
   diagnostic_settings = var.diagnostic_settings
   enable_telemetry    = var.enable_telemetry
   lock                = var.lock
-  # The scope the module lists role definitions at, so a
-  # `role_definition_id_or_name` given as a NAME still resolves. AzureRM did
-  # this lookup itself; under AzAPI it costs a
-  # `Microsoft.Authorization/roleDefinitions` list at plan time, and therefore
-  # read permission at the subscription.
-  role_assignment_definition_scope = local.parent_subscription_id
+  # Include resource-group custom roles as well as roles inherited from above.
+  role_assignment_definition_scope = var.parent_id
   role_assignments                 = var.role_assignments
 }
 
@@ -210,6 +207,7 @@ resource "azapi_update_resource" "this" {
   # `ignore_changes` here: this address is never imported, so it is always
   # created fresh and the null-vs-`[]` adoption difference cannot arise.
   response_export_values = []
+  retry                  = var.retry
 
   # Same AzureRM defaults as the full writer.
   timeouts {
@@ -440,6 +438,10 @@ resource "azapi_resource" "lock" {
       response_export_values,
     ]
   }
+  depends_on = [
+    azapi_update_resource.this,
+    azapi_resource_action.tags,
+  ]
 }
 
 # ---------------------------------------------------------------------------
@@ -456,12 +458,29 @@ resource "azapi_resource" "lock" {
 resource "azapi_resource" "role_assignment" {
   for_each = module.interfaces.role_assignments_azapi
 
-  name      = each.value.name
+  # A pinned name wins. Otherwise derive one, so a replacement gets a new GUID.
+  name = coalesce(
+    var.role_assignments[each.key].name,
+    uuidv5("url", join("|", [
+      lower(azapi_resource.this.id),
+      lower(each.value.body.properties.principalId),
+      lower(each.value.body.properties.roleDefinitionId),
+      lower(coalesce(each.value.body.properties.delegatedManagedIdentityResourceId, "-")),
+    ]))
+  )
   parent_id = azapi_resource.this.id
   type      = var.resource_types.authorization_role_assignments
+  # Lowercase the immutable IDs so a casing-only change does not replace the assignment.
   body = merge(each.value.body, {
     properties = merge(
       each.value.body.properties,
+      {
+        principalId      = lower(each.value.body.properties.principalId)
+        roleDefinitionId = lower(each.value.body.properties.roleDefinitionId)
+      },
+      each.value.body.properties.delegatedManagedIdentityResourceId == null ? {} : {
+        delegatedManagedIdentityResourceId = lower(each.value.body.properties.delegatedManagedIdentityResourceId)
+      },
       var.role_assignments[each.key].skip_service_principal_aad_check && var.role_assignments[each.key].principal_type == null ? {
         principalType = "ServicePrincipal"
       } : {},
@@ -470,7 +489,14 @@ resource "azapi_resource" "role_assignment" {
   ignore_body_changes = length(var.ignore_body_changes.authorization_role_assignments) > 0 ? (
     var.ignore_body_changes.authorization_role_assignments
   ) : null
-  ignore_null_property   = true
+  # Keeps the configured casing after refresh, so Azure's casing cannot trigger a replacement.
+  ignore_casing        = true
+  ignore_null_property = true
+  replace_triggers_refs = [
+    "properties.principalId",
+    "properties.roleDefinitionId",
+    "properties.delegatedManagedIdentityResourceId",
+  ]
   response_export_values = []
   retry                  = var.retry
 
@@ -486,16 +512,7 @@ resource "azapi_resource" "role_assignment" {
   # "a migration case where an imported server-assigned role-assignment name
   # must remain stable".
   #
-  # An existing `azurerm_role_assignment` has a SERVER-ASSIGNED GUID name.
-  # `avm-utl-interfaces` generates a fresh `random_uuid` when the consumer did
-  # not pin one, and `name` forces replacement on `azapi_resource`, so without
-  # this entry EVERY migrated role assignment would be DESTROYED AND RECREATED
-  # by the upgrade plan. With it, the migrated name is kept and only genuinely
-  # new assignments take the generated UUID.
-  #
-  # A consumer who wants to pin a name can now set `role_assignments[*].name`;
-  # on an already-migrated assignment that is a no-op until the address is
-  # replaced.
+  # A replacement ignores this entry and takes the derived name, so it gets a new GUID.
   lifecycle {
     ignore_changes = [
       name,

@@ -17,9 +17,6 @@ locals {
   # The ARM parent scope. Supplied whole by the caller -- the module never
   # constructs it (TFRMFR1, `avm-tf-azapi` SKILL L167-182).
   parent_id = var.parent_id
-  # Subscription scope, used only to let `avm-utl-interfaces` resolve a role
-  # definition NAME to its resource ID (the lookup AzureRM performed itself).
-  parent_subscription_id = "/subscriptions/${split("/", local.parent_id)[2]}"
 }
 
 locals {

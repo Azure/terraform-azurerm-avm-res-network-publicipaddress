@@ -7,8 +7,14 @@
 # configured and long before any request would be made, so these runs never
 # reach Azure.
 
-mock_provider "azapi" {}
-mock_provider "modtm" {}
+mock_provider "azapi" {
+  mock_data "azapi_client_config" {
+    defaults = {
+      subscription_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000"
+    }
+  }
+}
+
 mock_provider "random" {}
 
 variables {
@@ -35,6 +41,10 @@ run "parent_id_is_required" {
   }
 
   expect_failures = [var.parent_id]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "parent_id_is_used_verbatim" {
@@ -53,8 +63,12 @@ run "parent_id_is_used_verbatim" {
   }
 
   assert {
-    condition     = local.parent_subscription_id == "/subscriptions/11111111-1111-1111-1111-111111111111"
-    error_message = "The subscription scope used for role-definition lookup must come from `var.parent_id`, not from a provider."
+    condition     = azapi_resource.this.parent_id == var.parent_id
+    error_message = "The public IP writer must receive the caller-supplied resource-group parent ID."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -71,6 +85,10 @@ run "parent_id_must_be_a_resource_group_id" {
   }
 
   expect_failures = [var.parent_id]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "ddos_protection_plan_id_must_be_a_ddos_protection_plan_id" {
@@ -81,6 +99,10 @@ run "ddos_protection_plan_id_must_be_a_ddos_protection_plan_id" {
   }
 
   expect_failures = [var.ddos_protection_plan_id]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "public_ip_prefix_id_must_be_a_public_ip_prefix_id" {
@@ -91,6 +113,10 @@ run "public_ip_prefix_id_must_be_a_public_ip_prefix_id" {
   }
 
   expect_failures = [var.public_ip_prefix_id]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "diagnostic_workspace_id_must_be_a_workspace_id" {
@@ -105,6 +131,10 @@ run "diagnostic_workspace_id_must_be_a_workspace_id" {
   }
 
   expect_failures = [var.diagnostic_settings]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "diagnostic_storage_id_must_be_a_storage_account_id" {
@@ -119,6 +149,10 @@ run "diagnostic_storage_id_must_be_a_storage_account_id" {
   }
 
   expect_failures = [var.diagnostic_settings]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "diagnostic_event_hub_id_must_be_an_authorization_rule_id" {
@@ -133,6 +167,10 @@ run "diagnostic_event_hub_id_must_be_an_authorization_rule_id" {
   }
 
   expect_failures = [var.diagnostic_settings]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "diagnostic_resource_ids_of_the_expected_types_are_valid" {
@@ -152,6 +190,10 @@ run "diagnostic_resource_ids_of_the_expected_types_are_valid" {
     condition     = length(var.diagnostic_settings) == 1
     error_message = "Valid IDs for each supported typed diagnostic destination must remain accepted."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 # Both ID validations must tolerate their documented `null` default, or every
@@ -167,6 +209,10 @@ run "null_is_still_valid_for_the_optional_resource_ids" {
   assert {
     condition     = local.pip_config_ddos_plan_id == null && local.pip_config_prefix_id == null
     error_message = "An unset ddos_protection_plan_id / public_ip_prefix_id must leave the body member absent, not present-and-null."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -189,6 +235,10 @@ run "role_assignment_name_must_be_a_lowercase_guid" {
   }
 
   expect_failures = [var.role_assignments]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -205,4 +255,8 @@ run "ignore_body_changes_rejects_an_empty_path" {
   }
 
   expect_failures = [var.ignore_body_changes]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }

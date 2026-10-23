@@ -308,14 +308,14 @@ variable "role_assignments" {
   description = <<DESCRIPTION
 A map of role assignments to create on the <RESOURCE>. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time.
 
-- `name` - (Optional) The name (a lowercase GUID) of the role assignment. If not set, a random UUID is generated. Existing role assignments migrated from the AzureRM implementation keep their server-assigned name; see the `lifecycle` note in `main.tf`.
-- `role_definition_id_or_name` - The ID or name of the role definition to assign to the principal.
-- `principal_id` - The ID of the principal to assign the role to.
+- `name` - (Optional) The name (a lowercase GUID) of the role assignment. If not set, the module derives a GUID from the scope, principal, role and delegated identity. Existing role assignments migrated from the AzureRM implementation keep their server-assigned name; see the `lifecycle` note in `main.tf`. A name that you set is used when the assignment is created or replaced, so set a new name if you replace an assignment with a changed principal and want to pick the name yourself.
+- `role_definition_id_or_name` - The ID or name of the role definition to assign to the principal. Names are resolved at `parent_id`, including resource-group custom roles and inherited roles. Changing the resolved role on an existing assignment replaces it with a new GUID.
+- `principal_id` - The ID of the principal to assign the role to. Changing it on an existing assignment replaces it with a new GUID.
 - `description` - (Optional) The description of the role assignment.
 - `skip_service_principal_aad_check` - (Optional, deprecated) Preserves the AzureRM request behavior by setting `principalType` to `ServicePrincipal` when `principal_type` is unset. If `principal_type` is explicitly set, that value takes precedence. Retry behavior is configured with the module's `retry` input.
 - `condition` - (Optional) The condition which will be used to scope the role assignment.
 - `condition_version` - (Optional) The version of the condition syntax. Leave as `null` if you are not using a condition, if you are then valid values are '2.0'.
-- `delegated_managed_identity_resource_id` - (Optional) The delegated Azure Resource Id which contains a Managed Identity. Changing this forces a new resource to be created. This field is only used in cross-tenant scenario.
+- `delegated_managed_identity_resource_id` - (Optional) The delegated Azure Resource Id which contains a Managed Identity. This field is only used in cross-tenant scenarios. Changing it on an existing assignment replaces it with a new GUID.
 - `principal_type` - (Optional) The type of the `principal_id`. Possible values are `User`, `Group` and `ServicePrincipal`. It is necessary to explicitly set this attribute when creating role assignments if the principal creating the assignment is constrained by ABAC rules that filters on the PrincipalType attribute.
 
 > Note: only set `skip_service_principal_aad_check` to true if you are assigning a role to a service principal.

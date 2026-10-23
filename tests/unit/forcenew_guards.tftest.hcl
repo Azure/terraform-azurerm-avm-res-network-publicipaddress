@@ -18,12 +18,13 @@ mock_provider "azapi" {
   }
   mock_data "azapi_client_config" {
     defaults = {
-      subscription_id = "00000000-0000-0000-0000-000000000000"
-      tenant_id       = "11111111-1111-1111-1111-111111111111"
+      subscription_id          = "00000000-0000-0000-0000-000000000000"
+      tenant_id                = "11111111-1111-1111-1111-111111111111"
+      subscription_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000"
     }
   }
 }
-mock_provider "modtm" {}
+
 mock_provider "random" {}
 
 variables {
@@ -55,6 +56,10 @@ run "seed_a_standard_zonal_public_ip" {
     condition     = local.pip_state_zones == toset(["1", "2", "3"])
     error_message = "The seeded state must carry the zones in its body."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -77,6 +82,10 @@ run "a_non_forcenew_change_still_plans" {
     condition     = local.public_ip_update_body.properties.idleTimeoutInMinutes == 15 && local.public_ip_update_body.properties.ddosSettings.protectionMode == "Enabled"
     error_message = "idle_timeout_in_minutes and ddos_protection_mode are day-2 assignable in AzureRM and must remain assignable through the merge writer."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -93,6 +102,10 @@ run "sku_change_is_refused" {
   }
 
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "sku_tier_change_is_refused" {
@@ -106,6 +119,10 @@ run "sku_tier_change_is_refused" {
   }
 
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "zones_change_is_refused" {
@@ -119,6 +136,10 @@ run "zones_change_is_refused" {
   }
 
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "ip_version_change_is_refused" {
@@ -133,6 +154,10 @@ run "ip_version_change_is_refused" {
   }
 
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "edge_zone_change_is_refused" {
@@ -147,6 +172,10 @@ run "edge_zone_change_is_refused" {
   }
 
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "ip_tags_change_is_refused" {
@@ -161,6 +190,10 @@ run "ip_tags_change_is_refused" {
   }
 
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "public_ip_prefix_id_change_is_refused" {
@@ -175,6 +208,10 @@ run "public_ip_prefix_id_change_is_refused" {
   }
 
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "ddos_protection_plan_id_change_is_refused" {
@@ -189,6 +226,10 @@ run "ddos_protection_plan_id_change_is_refused" {
   }
 
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -208,6 +249,10 @@ run "seed_a_public_ip_with_dns_settings" {
     condition     = local.pip_state_dns_label == "pip-unit-test"
     error_message = "The seeded state must carry the expected domain name label, or the removal guard is comparing against nothing."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "changing_the_domain_name_label_is_allowed" {
@@ -221,6 +266,10 @@ run "changing_the_domain_name_label_is_allowed" {
   assert {
     condition     = local.public_ip_update_body.properties.dnsSettings.domainNameLabel == "pip-unit-test-renamed"
     error_message = "CHANGING a domain name label is a normal day-2 update in AzureRM and must still work -- only REMOVAL is refused."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -237,6 +286,10 @@ run "switching_from_a_domain_label_to_reverse_fqdn_is_refused" {
   # azapi_update_resource manages a subset and cannot remove the omitted
   # nested field, so the switch must not silently leave both fields configured.
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "seed_a_public_ip_with_reverse_fqdn" {
@@ -245,6 +298,10 @@ run "seed_a_public_ip_with_reverse_fqdn" {
 
   variables {
     reverse_fqdn = "example.contoso.com."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -258,6 +315,10 @@ run "switching_from_reverse_fqdn_to_a_domain_label_is_refused" {
   }
 
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "removing_the_dns_settings_is_refused" {
@@ -274,4 +335,8 @@ run "removing_the_dns_settings_is_refused" {
   # be a SILENT no-op behind a plan that looked like it worked. Failing loudly
   # is the only honest option short of replacing the resource.
   expect_failures = [azapi_update_resource.this]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }

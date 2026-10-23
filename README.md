@@ -33,6 +33,12 @@ What you need to know:
   `skip_service_principal_aad_check = true` and `principal_type` is unset, the module sends
   `principalType = "ServicePrincipal"` as the AzureRM implementation did. An explicitly configured
   `principal_type` takes precedence.
+- **Existing role-assignment GUIDs are retained.** Changes to the principal, resolved role
+  definition, or delegated managed identity replace the assignment with a new GUID. See
+  [Changing an existing role assignment](#changing-an-existing-role-assignment).
+- **Remove blocking locks before upgrading.** New locks are created after the public IP merge
+  writer and tag action, but this ordering cannot unlock existing resources. See
+  [Migrating a locked public IP](#migrating-a-locked-public-ip).
 - **Lock-removal retries are targeted, not a teardown guarantee.** The default retry list includes
   `ScopeLocked` for transient diagnostic-settings deletion failures while a lock is being removed.
 - **Use only the in-module state moves.** Use a normally refreshed plan and stop if it shows an
@@ -40,6 +46,53 @@ What you need to know:
 - **Minimum Terraform is now 1.9.** `parent_id` is validated with a provider-defined function.
 - **New optional inputs.** `resource_types`, `ignore_body_changes`, `retry` and `timeouts`. Their
   defaults preserve the previous behaviour.
+
+### Migrating a locked public IP
+
+An existing `ReadOnly` lock blocks the merge PUT and tag action during migration, even if the
+public IP settings are unchanged. Dependency ordering only protects creation of a new lock;
+it does not remove or bypass a lock already in Azure. Retries cannot fix a persistent lock.
+
+1. Before upgrading, remove the module-managed lock in a separate apply using the currently
+   deployed module version (`lock = null`). Have the owner remove any inherited `ReadOnly`
+   locks at the resource-group or subscription scope separately; this module cannot remove
+   those locks.
+2. Keep `lock = null` while upgrading. Review a normally refreshed plan, apply the migration,
+   and verify convergence before restoring protection.
+3. Restore the desired module lock in a separate apply, then have the relevant owners restore
+   inherited locks. For future configuration writes under a `ReadOnly` lock, use the same
+   unlock/change/relock sequence.
+
+Do not merely remove a lock from Terraform state: that leaves the Azure lock in place.
+Coordinate the temporary loss of protection with the resource and inherited-lock owners.
+
+### Changing an existing role assignment
+
+The module keeps the GUID of an adopted role assignment while its principal, resolved
+role-definition ID and delegated managed identity stay the same. Description and condition
+changes update the assignment in place and keep the GUID. A change to the principal, the
+resolved role or the delegated identity cannot be updated in place in Azure, so the module
+replaces the assignment, and the replacement gets a new GUID derived from those values. A
+`name` you set yourself is used for the replacement instead, so set a new name when you replace
+an assignment with a changed principal. A change to `name` alone does not rename an existing
+assignment.
+
+To change an immutable value:
+
+1. Coordinate with the resource owner and remove blocking locks in a separate apply. A
+   `CanNotDelete` lock also blocks role-assignment removal; check resource-level and inherited
+   resource-group/subscription locks. Use an identity that will retain permission to complete
+   the change after the old assignment is removed.
+2. Change the value in `role_assignments` and review the plan. It must show the assignment
+   replaced, with a new name, and not updated in place. The old assignment is deleted first, so
+   its access is interrupted until the new one exists.
+3. Apply, verify the resulting access, and restore module-managed and inherited locks
+   separately.
+
+Plan the first apply after upgrading from the AzureRM module with no role-assignment changes.
+That plan shows each assignment updated in place once, with an unchanged body, while the
+replacement settings are stored. Use a normally refreshed plan, and stop if it shows a role
+assignment replaced.
 
 <!-- markdownlint-disable MD033 -->
 ## Requirements
@@ -50,10 +103,6 @@ The following requirements are needed by this module:
 
 - <a name="requirement_azapi"></a> [azapi](#requirement\_azapi) (~> 2.12)
 
-- <a name="requirement_modtm"></a> [modtm](#requirement\_modtm) (~> 0.3)
-
-- <a name="requirement_random"></a> [random](#requirement\_random) (>= 3.5.0)
-
 ## Resources
 
 The following resources are used by this module:
@@ -61,14 +110,13 @@ The following resources are used by this module:
 - [azapi_resource.diagnostic_setting](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
 - [azapi_resource.lock](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
 - [azapi_resource.role_assignment](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
+- [azapi_resource.telemetry](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
 - [azapi_resource.this](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
 - [azapi_resource_action.tags](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource_action) (resource)
 - [azapi_update_resource.this](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/update_resource) (resource)
-- [modtm_telemetry.telemetry](https://registry.terraform.io/providers/azure/modtm/latest/docs/resources/telemetry) (resource)
-- [random_uuid.telemetry](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/uuid) (resource)
+- [terraform_data.telemetry](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) (resource)
 - [azapi_client_config.telemetry](https://registry.terraform.io/providers/Azure/azapi/latest/docs/data-sources/client_config) (data source)
 - [azapi_resource.this](https://registry.terraform.io/providers/Azure/azapi/latest/docs/data-sources/resource) (data source)
-- [modtm_module_source.telemetry](https://registry.terraform.io/providers/azure/modtm/latest/docs/data-sources/module_source) (data source)
 
 <!-- markdownlint-disable MD013 -->
 ## Required Inputs
@@ -332,14 +380,14 @@ Default: `null`
 
 Description: A map of role assignments to create on the <RESOURCE>. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time.
 
-- `name` - (Optional) The name (a lowercase GUID) of the role assignment. If not set, a random UUID is generated. Existing role assignments migrated from the AzureRM implementation keep their server-assigned name; see the `lifecycle` note in `main.tf`.
-- `role_definition_id_or_name` - The ID or name of the role definition to assign to the principal.
-- `principal_id` - The ID of the principal to assign the role to.
+- `name` - (Optional) The name (a lowercase GUID) of the role assignment. If not set, the module derives a GUID from the scope, principal, role and delegated identity. Existing role assignments migrated from the AzureRM implementation keep their server-assigned name; see the `lifecycle` note in `main.tf`. A name that you set is used when the assignment is created or replaced, so set a new name if you replace an assignment with a changed principal and want to pick the name yourself.
+- `role_definition_id_or_name` - The ID or name of the role definition to assign to the principal. Names are resolved at `parent_id`, including resource-group custom roles and inherited roles. Changing the resolved role on an existing assignment replaces it with a new GUID.
+- `principal_id` - The ID of the principal to assign the role to. Changing it on an existing assignment replaces it with a new GUID.
 - `description` - (Optional) The description of the role assignment.
 - `skip_service_principal_aad_check` - (Optional, deprecated) Preserves the AzureRM request behavior by setting `principalType` to `ServicePrincipal` when `principal_type` is unset. If `principal_type` is explicitly set, that value takes precedence. Retry behavior is configured with the module's `retry` input.
 - `condition` - (Optional) The condition which will be used to scope the role assignment.
 - `condition_version` - (Optional) The version of the condition syntax. Leave as `null` if you are not using a condition, if you are then valid values are '2.0'.
-- `delegated_managed_identity_resource_id` - (Optional) The delegated Azure Resource Id which contains a Managed Identity. Changing this forces a new resource to be created. This field is only used in cross-tenant scenario.
+- `delegated_managed_identity_resource_id` - (Optional) The delegated Azure Resource Id which contains a Managed Identity. This field is only used in cross-tenant scenarios. Changing it on an existing assignment replaces it with a new GUID.
 - `principal_type` - (Optional) The type of the `principal_id`. Possible values are `User`, `Group` and `ServicePrincipal`. It is necessary to explicitly set this attribute when creating role assignments if the principal creating the assignment is constrained by ABAC rules that filters on the PrincipalType attribute.
 
 > Note: only set `skip_service_principal_aad_check` to true if you are assigning a role to a service principal.
@@ -454,7 +502,7 @@ The following Modules are called:
 
 Source: Azure/avm-utl-interfaces/azure
 
-Version: 0.7.0
+Version: 0.9.0
 
 <!-- markdownlint-disable-next-line MD041 -->
 ## Data Collection

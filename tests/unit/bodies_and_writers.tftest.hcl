@@ -22,8 +22,9 @@ mock_provider "azapi" {
   # than generated so any run that turns telemetry on reads plainly.
   mock_data "azapi_client_config" {
     defaults = {
-      subscription_id = "00000000-0000-0000-0000-000000000000"
-      tenant_id       = "11111111-1111-1111-1111-111111111111"
+      subscription_id          = "00000000-0000-0000-0000-000000000000"
+      tenant_id                = "11111111-1111-1111-1111-111111111111"
+      subscription_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000"
     }
   }
   # `avm-utl-interfaces` resolves a role definition NAME through this data
@@ -42,7 +43,7 @@ mock_provider "azapi" {
     }
   }
 }
-mock_provider "modtm" {}
+
 mock_provider "random" {}
 
 variables {
@@ -83,6 +84,10 @@ run "seed_public_ip_for_real_provider_output_plan" {
   assert {
     condition     = azapi_resource.this.response_export_values == []
     error_message = "The real-provider plan fixture must start from an empty exported output."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -131,6 +136,10 @@ run "genesis_body_matches_the_azurerm_create_at_defaults" {
   assert {
     condition     = local.public_ip_tags != null && length(local.public_ip_tags) == 0
     error_message = "An unset tags input must normalise to an empty map, matching AzureRM's tags.Expand(nil)."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -182,6 +191,10 @@ run "conditional_body_members_appear_only_when_configured" {
     condition     = local.public_ip_body.properties.publicIPPrefix.id == var.public_ip_prefix_id
     error_message = "public_ip_prefix_id must be nested at properties.publicIPPrefix.id."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "dns_settings_is_built_from_either_input_alone" {
@@ -194,6 +207,10 @@ run "dns_settings_is_built_from_either_input_alone" {
   assert {
     condition     = join(",", keys(local.public_ip_body.properties.dnsSettings)) == "reverseFqdn"
     error_message = "With only reverse_fqdn set, dnsSettings must carry reverseFqdn alone -- domainNameLabel must be ABSENT, not null. The day-2 writer MERGES, so a null there would be sent to ARM as an explicit null."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -227,6 +244,10 @@ run "update_body_carries_only_the_non_forcenew_members" {
     condition     = !can(local.public_ip_update_body.tags)
     error_message = "tags must NOT be in the merge body. A merge writer cannot remove a tag key, so routing tags through it silently breaks tag removal -- a regression against azurerm 4.x, which assigned the whole map."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "update_body_gains_dns_settings_when_configured" {
@@ -239,6 +260,10 @@ run "update_body_gains_dns_settings_when_configured" {
   assert {
     condition     = join(",", sort(keys(local.public_ip_update_body.properties))) == "ddosSettings,dnsSettings,idleTimeoutInMinutes,publicIPAllocationMethod"
     error_message = "dnsSettings must be assignable on the day-2 path -- AzureRM's update could set it."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -277,6 +302,10 @@ run "every_writer_declares_an_empty_export_list" {
     condition     = join(",", data.azapi_resource.this.response_export_values) == "properties.ipAddress"
     error_message = "The allocated IP address must be read through the read-only data source, not exported from a writer."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -292,6 +321,10 @@ run "tag_writer_is_absent_when_tags_are_unset" {
   assert {
     condition     = length(azapi_resource_action.tags) == 0
     error_message = "With tags unset the tag writer must not exist. AzureRM only re-PUT tags on d.HasChanges(\"tags\"), so an unconditional replace-all PUT would strip policy-inherited tags from every untagged consumer on the first apply after the upgrade."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -331,6 +364,10 @@ run "tag_writer_replaces_the_whole_set_at_the_tags_singleton" {
     condition     = jsonencode(azapi_resource.this.tags) == jsonencode(var.tags)
     error_message = "azapi_resource.this must set exactly `tags = var.tags` (avm_azapi_resource_tags_required)."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "an_empty_tag_map_still_clears_tags" {
@@ -343,6 +380,10 @@ run "an_empty_tag_map_still_clears_tags" {
   assert {
     condition     = length(azapi_resource_action.tags) == 1 && length(azapi_resource_action.tags[0].body.properties.tags) == 0
     error_message = "tags = {} is NOT the same as tags = null: an explicit empty map must still produce a replace-all PUT that clears every tag, which is what AzureRM did."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -368,6 +409,10 @@ run "a_tag_action_uses_the_consumer_timeouts" {
     )
     error_message = "The tag action must receive all consumer timeout overrides."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "transitioning_tags_to_null_does_not_issue_a_clear" {
@@ -376,6 +421,10 @@ run "transitioning_tags_to_null_does_not_issue_a_clear" {
 
   variables {
     tags = { managed = "value" }
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -390,6 +439,10 @@ run "null_tags_remove_the_writer_without_clearing_the_remote_tag_set" {
   assert {
     condition     = length(azapi_resource_action.tags) == 0
     error_message = "Changing tags from a map to null removes the action without an Azure request; use an explicit empty map to clear tags."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -421,6 +474,10 @@ run "skip_service_principal_aad_check_preserves_principal_type_precedence" {
     condition     = azapi_resource.role_assignment["explicit_principal_type"].body.properties.principalType == "User"
     error_message = "An explicit principal_type must take precedence over the compatibility behavior of skip_service_principal_aad_check."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "default_retry_includes_scope_locked_for_lock_removal_races" {
@@ -437,6 +494,10 @@ run "default_retry_includes_scope_locked_for_lock_removal_races" {
   assert {
     condition     = contains(azapi_resource.diagnostic_setting["logs"].retry.error_message_regex, "ScopeLocked")
     error_message = "The default retry list must reach diagnostic settings and include ScopeLocked for transient deletion failures while locks are removed."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -466,6 +527,10 @@ run "lock_keeps_the_azurerm_generated_name_and_notes" {
     condition     = azapi_resource.lock[0].body.properties.notes == "Cannot delete the resource or its child resources."
     error_message = "AzureRM always set lock notes; avm-utl-interfaces leaves them null. Restoring the AzureRM string keeps the upgrade plan free of an avoidable lock body diff."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "read_only_lock_notes_match_azurerm" {
@@ -484,6 +549,10 @@ run "read_only_lock_notes_match_azurerm" {
     condition     = azapi_resource.lock[0].body.properties.notes == "Cannot delete or modify the resource or its child resources."
     error_message = "The ReadOnly lock note must match the AzureRM string exactly."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 # Variant 2 of the AVM lock interface (`avm_interface_lock_deprecated`) adds
@@ -499,6 +568,10 @@ run "a_supplied_lock_note_wins_over_the_azurerm_fallback" {
   assert {
     condition     = azapi_resource.lock[0].body.properties.notes == "Owned by the network platform team."
     error_message = "A consumer-supplied lock note must win over the AzureRM default string."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -544,6 +617,10 @@ run "dedicated_destination_type_is_sent_as_null" {
   assert {
     condition     = local.diagnostic_setting_bodies["dedicated"].properties.workspaceId == "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.OperationalInsights/workspaces/law-test"
     error_message = "The interfaces body must survive the logAnalyticsDestinationType override -- the override merges, it does not replace."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -598,6 +675,10 @@ run "diagnostic_setting_ignores_response_only_list_items" {
     condition     = azapi_resource.diagnostic_setting["this"].body != null
     error_message = "`body` must remain live configuration. Suppressing the drift by ignoring the whole body would also kill every day-2 diagnostic-setting update."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -620,6 +701,10 @@ run "timeouts_default_to_the_azurerm_values" {
     condition     = local.timeouts.insights_diagnostic_settings.delete == "60m"
     error_message = "Diagnostic settings had a 60m delete timeout in AzureRM, not 30m."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "a_consumer_timeout_override_applies_everywhere" {
@@ -637,6 +722,10 @@ run "a_consumer_timeout_override_applies_everywhere" {
       local.timeouts.insights_diagnostic_settings.delete == "60m"
     )
     error_message = "An override must replace only the member supplied; the others must keep their per-resource AzureRM default."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -657,6 +746,10 @@ run "a_null_timeouts_object_falls_back_to_the_azurerm_defaults" {
       local.timeouts.insights_diagnostic_settings.delete == "60m"
     )
     error_message = "`timeouts = null` must behave exactly like every member being null. The variable cannot be fenced off with `nullable = false` -- avm_interface_timeouts forbids it."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -698,6 +791,10 @@ run "resource_types_reach_the_resources_they_name" {
     )
     error_message = "The satellite resources must keep their own defaults when only the public IP type is overridden. These three do NOT ignore `type`, so their defaults are what keep the moved upgrade plan free of type drift."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 # ⭐ THE PROPERTY THAT MAKES THE `moved` UPGRADE PLAN SAFE.
@@ -724,6 +821,10 @@ run "seed_state_for_the_type_pinning_check" {
     condition     = azapi_resource.this.type == "Microsoft.Network/publicIPAddresses@2025-07-01"
     error_message = "The seeded state must carry the module's default API version, or the run below proves nothing."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "type_drift_is_invisible_on_the_create_only_writer" {
@@ -744,5 +845,9 @@ run "type_drift_is_invisible_on_the_create_only_writer" {
   assert {
     condition     = azapi_update_resource.this.type == "Microsoft.Network/publicIPAddresses@2024-05-01"
     error_message = "The merge writer must follow the configuration. If it did not, this test would not be discriminating and the assertion above would prove nothing."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
