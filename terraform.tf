@@ -22,13 +22,5 @@ terraform {
       # `var.resource_types` are aligned to -- see the note there.
       version = "~> 2.12"
     }
-    modtm = {
-      source  = "azure/modtm"
-      version = "~> 0.3"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = ">= 3.5.0"
-    }
   }
 }
