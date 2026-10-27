@@ -516,7 +516,6 @@ resource "azapi_resource" "role_assignment" {
   lifecycle {
     ignore_changes = [
       name,
-      response_export_values,
     ]
   }
 }
