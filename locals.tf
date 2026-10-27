@@ -1,27 +1,21 @@
 # ---------------------------------------------------------------------------
 # Request bodies, parent scope, per-resource timeout fallbacks, and the
-# state-vs-config comparisons that back the ForceNew preconditions in
-# `main.tf`.
+# state-vs-config comparisons behind the ForceNew preconditions in `main.tf`.
 #
-# Every body below is built with `merge()` rather than with `attr = null`, so
-# an optional the consumer left unset is ABSENT from the object rather than
-# present-and-null. That matters twice:
-#   - on the create-only writer it reproduces AzureRM's `omitempty`
-#     serialisation exactly (`ignore_null_property = true` would also do it,
-#     and is kept as belt and braces);
-#   - on the MERGE writer it is the only thing that works. That resource has no
-#     `ignore_null_property` attribute in azapi 2.13.0, so a present-and-null
-#     key would be merged into the live object as an explicit null.
+# Every body is built with `merge()` rather than `attr = null`, so an unset
+# optional is absent from the object instead of present-and-null. The create
+# writer would tolerate nulls (`ignore_null_property`), but the merge writer has
+# no such attribute in azapi 2.13.0, so a null key would be merged into the live
+# object as an explicit null.
 # ---------------------------------------------------------------------------
 locals {
-  # The ARM parent scope. Supplied whole by the caller -- the module never
-  # constructs it (TFRMFR1, `avm-tf-azapi` SKILL L167-182).
+  # The ARM parent scope, supplied whole by the caller (TFRMFR1).
   parent_id = var.parent_id
 }
 
 locals {
-  # PIP L239-L266. AzureRM always sent `ddosSettings.protectionMode`, and
-  # attached `ddosProtectionPlan` only when the plan ID was set.
+  # AzureRM always sent `ddosSettings.protectionMode`, and attached
+  # `ddosProtectionPlan` only when the plan ID was set.
   public_ip_ddos_settings = merge(
     {
       protectionMode = var.ddos_protection_mode
@@ -30,28 +24,24 @@ locals {
       ddosProtectionPlan = { id = var.ddos_protection_plan_id }
     } : {},
   )
-  # PIP L283-L300. AzureRM built `dnsSettings` only when at least one of
-  # `domain_name_label` / `reverse_fqdn` was set, and omitted the object
-  # entirely otherwise. `domain_name_label_scope` is not exposed by this
-  # module, so it is not in either half.
+  # AzureRM built `dnsSettings` only when `domain_name_label` or `reverse_fqdn`
+  # was set. `domain_name_label_scope` is not exposed by this module.
   public_ip_dns_settings = length(local.public_ip_dns_settings_members) > 0 ? local.public_ip_dns_settings_members : null
   public_ip_dns_settings_members = merge(
     var.domain_name_label != null ? { domainNameLabel = var.domain_name_label } : {},
     var.reverse_fqdn != null ? { reverseFqdn = var.reverse_fqdn } : {},
   )
-  # PIP L302-L315. A map of tag-type -> tag becomes an ARM array of objects.
+  # A map of tag-type -> tag becomes an ARM array of objects.
   public_ip_ip_tags = [for ip_tag_type, ip_tag in var.ip_tags : {
     ipTagType = ip_tag_type
     tag       = ip_tag
   }]
-  # ARM types `zones` as an array of STRINGS; the module's public API is
-  # `set(number)`, which AzureRM converted internally.
+  # ARM types `zones` as strings; the module's input is `set(number)`.
   public_ip_zones = [for zone in var.zones : tostring(zone)]
 }
 
 locals {
-  # GENESIS BODY -- what AzureRM's CREATE sent, member for member
-  # (`public_ip_resource.go` L241-L315 at azurerm v4.x).
+  # Genesis body: what AzureRM's create sent, member for member.
   public_ip_body = merge(
     {
       sku = {
@@ -79,19 +69,12 @@ locals {
     length(var.zones) > 0 ? { zones = local.public_ip_zones } : {},
   )
 
-  # DAY-2 MERGE BODY -- the NON-ForceNew subset only.
-  #
-  # AzureRM's `resourcePublicIpUpdate` (PIP L340-L410) is `payload :=
-  # existing.Model` followed by guarded assignments, i.e. GET-then-patch-then-
-  # PUT. The four members it could assign were `publicIPAllocationMethod`,
+  # Day-2 merge body: the non-ForceNew subset only. AzureRM's update path was
+  # GET, patch, PUT, and could assign `publicIPAllocationMethod`,
   # `ddosSettings.protectionMode`, `idleTimeoutInMinutes` and `dnsSettings`.
-  # (`ddosSettings.ddosProtectionPlan` also has an assignment there, but the
-  # schema marks `ddos_protection_plan_id` ForceNew at PIP L95, so that branch
-  # is unreachable -- the diff replaces first. It is therefore a PRECONDITION
-  # here, not a merge member.)
-  #
-  # `tags` is NOT here. A merge writer cannot REMOVE a key, so tags go through
-  # `azapi_resource_action.tags`, which PUTs the whole set.
+  # `ddosProtectionPlan` is a precondition instead, because the schema marks it
+  # ForceNew. `tags` is not here: a merge writer cannot remove a key, so tags go
+  # through `azapi_resource_action.tags`.
   public_ip_update_body = {
     properties = merge(
       {
@@ -106,26 +89,14 @@ locals {
 
 locals {
   # ===========================================================================
-  # FORCENEW COMPARISONS. Each pair is built by the SAME expression on both
-  # sides -- one reading `azapi_resource.this.body` (the STATE body, pinned by
-  # `ignore_changes = [body]` on the create-only writer) and one reading the
-  # genesis body -- so an absent member yields `null`/`[]` on both sides and a
-  # non-zonal, non-edge-zone, prefix-less public IP passes every check.
+  # ForceNew comparisons. Each pair is built by the same expression on both
+  # sides, one reading `azapi_resource.this.body` (the state body) and one the
+  # genesis body, so an absent member is `null`/`[]` on both sides.
   #
-  # The list is exhaustive against every `ForceNew: true` in
-  # `public_ip_resource.go` at azurerm v4.x:
-  #   L60  name                     -> azapi `name`        (native RequiresReplace)
-  #   L95  ddos_protection_plan_id  -> properties.ddosSettings.ddosProtectionPlan.id
-  #   L101 ip_version               -> properties.publicIPAddressVersion
-  #   L111 sku                      -> sku.name
-  #   L121 sku_tier                 -> sku.tier
-  #   L165 public_ip_prefix_id      -> properties.publicIPPrefix.id
-  #   L172 ip_tags                  -> properties.ipTags
-  #   L95  edge_zone (commonschema.EdgeZoneOptionalForceNew)      -> extendedLocation.name
-  #   L178 zones     (commonschema.ZonesMultipleOptionalForceNew) -> zones
-  #   plus `location` and `resource_group_name`, which are azapi `location` and
-  #   `parent_id` and already force replacement natively.
-  # `domain_name_label_scope` (ForceNewIfChange, L200) is not exposed.
+  # Covered: ddos_protection_plan_id, ip_version, sku, sku_tier,
+  # public_ip_prefix_id, ip_tags, edge_zone and zones. `name`, `location` and
+  # `parent_id` already force replacement natively in azapi, and
+  # `domain_name_label_scope` is not exposed.
   # ===========================================================================
   pip_config_ddos_plan_id = try(lower(tostring(local.public_ip_body.properties.ddosSettings.ddosProtectionPlan.id)), null)
   pip_config_edge_zone    = try(lower(tostring(local.public_ip_body.extendedLocation.name)), null)
@@ -150,12 +121,10 @@ locals {
 }
 
 locals {
-  # Diagnostic-setting bodies. The shape comes from `avm-utl-interfaces`, with
-  # ONE override: AzureRM sent NOTHING for `log_analytics_destination_type ==
-  # "Dedicated"` (main.tf L53 of the AzureRM implementation), while the
-  # interfaces module always sends the literal. Preserving AzureRM's behaviour
-  # keeps the upgrade plan free of a body diff on every existing diagnostic
-  # setting.
+  # Diagnostic-setting bodies, shaped by `avm-utl-interfaces` with one override:
+  # AzureRM sent nothing for `log_analytics_destination_type == "Dedicated"`,
+  # while the interfaces module always sends the literal. Matching AzureRM keeps
+  # the upgrade plan free of a body diff on existing diagnostic settings.
   diagnostic_setting_bodies = {
     for key, setting in module.interfaces.diagnostic_settings_azapi : key => {
       properties = merge(
@@ -173,26 +142,23 @@ locals {
 }
 
 locals {
-  # AzureRM always set a lock note; `avm-utl-interfaces` leaves `notes` null.
-  # Variant-2 of the AVM lock interface exposes `notes`, so a consumer value
-  # wins and the AzureRM string is the fallback.
+  # AzureRM always set a lock note and `avm-utl-interfaces` leaves it null. A
+  # consumer value wins; the AzureRM string is the fallback.
   lock_notes = var.lock == null ? null : (
     var.lock.notes != null ? var.lock.notes : (
       var.lock.kind == "CanNotDelete" ? "Cannot delete the resource or its child resources." : "Cannot delete or modify the resource or its child resources."
     )
   )
-  # `tags.Expand(nil)` in AzureRM returns a pointer to an EMPTY map, never nil,
-  # so an untagged public IP was PUT with `"tags": {}`. Used by the tag writer
-  # only -- `azapi_resource.this` must set `tags = var.tags` literally
+  # AzureRM PUT `"tags": {}` for an untagged public IP. Used by the tag writer
+  # only; `azapi_resource.this` must set `tags = var.tags` literally
   # (`avm_azapi_resource_tags_required`).
   public_ip_tags = var.tags == null ? {} : var.tags
 }
 
 locals {
-  # 🔴 TFFR7 / `avm_interface_timeouts`: `timeouts` must PERMIT `null`, so the
-  # input cannot be fenced off with `nullable = false` and is normalised here
-  # instead. A null input is identical to every member being null -- the
-  # AzureRM defaults below apply.
+  # TFFR7 / `avm_interface_timeouts`: `timeouts` must permit `null`, so it is
+  # normalised here instead of fenced off with `nullable = false`. A null input
+  # means every member is null and the AzureRM defaults below apply.
   timeouts_requested = var.timeouts == null ? {
     create = null
     delete = null
@@ -202,19 +168,11 @@ locals {
 }
 
 locals {
-  # PER-RESOURCE TIMEOUT FALLBACKS. `var.timeouts` is a single flat object, so
-  # a consumer override applies everywhere; when a member is null the module
-  # falls back to the AzureRM default FOR THAT RESOURCE TYPE, which keeps the
-  # migration timeout-neutral.
-  #
-  #   publicIPAddresses    create 30m / read 5m / update 30m / delete 30m
-  #                        (`public_ip_resource.go` L50-L53)
-  #   locks                create 30m / read 5m / update 30m / delete 30m
-  #                        (`management_lock_resource.go`)
-  #   roleAssignments      create 30m / read 5m / update 30m / delete 30m
-  #                        (`role_assignment_resource.go`)
-  #   diagnosticSettings   create 30m / read 5m / update 30m / delete 60m
-  #                        (`monitor_diagnostic_setting_resource.go`)
+  # Per-resource timeout fallbacks. `var.timeouts` is one flat object, so an
+  # override applies everywhere. A null member falls back to the AzureRM default
+  # for that resource type (create/read/update/delete: 30m/5m/30m/30m, except
+  # diagnostic settings, which delete in 60m), keeping the migration
+  # timeout-neutral.
   timeouts = {
     for resource_key, defaults in {
       network_public_ip_addresses    = { create = "30m", read = "5m", update = "30m", delete = "30m" }

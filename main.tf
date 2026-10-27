@@ -1,61 +1,22 @@
 # ---------------------------------------------------------------------------
-# Azure public IP address, migrated from `hashicorp/azurerm` to `Azure/azapi`
-# IN PLACE (`avm-tf-migration` SKILL.md L16-24): same module, same
-# `count`/`for_each` boundary, same keys. Only the provider and the request
-# bodies moved, so a consumer bumps the module version and nothing else.
+# Public IP address, migrated in place from `hashicorp/azurerm` to `Azure/azapi`
+# (`avm-tf-migration` SKILL): same module, same keys, only the provider and the
+# request bodies moved.
 #
-# THE SHAPE, in one sentence: `azapi_resource.this` creates the public IP once
-# and then never PUTs again, and every subsequent write goes through
-# `azapi_update_resource.this`, which GETs the live object and merges.
-#
-# This is the CANDIDATE-1 shape from the vWAN pattern module
-# (`modules/firewall/main.tf` at `azapi-migration-phase1` cd9db05). It is used
-# here, and not the simpler single-full-PUT writer, because
-# `Microsoft.Network/publicIPAddresses@2025-07-01` has WRITABLE members that
-# this module does not declare, and a full PUT that omits them can drop them:
-#
-#   path                              why it matters
-#   --------------------------------  --------------------------------------
-#   properties.ipAddress              the allocated address itself. Writable
-#                                     (NOT `readOnly` in the 2025-07-01 type),
-#                                     so omitting it from a PUT is not
-#                                     obviously safe. Losing it is the worst
-#                                     outcome this module has.
-#   properties.natGateway             the NAT gateway association. Writable on
-#                                     the PIP, so a PUT that omits it can
-#                                     dissociate a public IP from a NAT
-#                                     gateway that another module owns.
-#   properties.linkedPublicIPAddress  IPv4/IPv6 pairing.
-#   properties.servicePublicIPAddress service-linked address.
-#   properties.deleteOption           NIC-cascade delete behaviour.
-#   properties.dnsSettings.domainNameLabelScope
-#                                     not exposed by this module's public API.
-#
-# `properties.ipConfiguration` is `readOnly`, so LB/NIC associations are NOT
-# at risk -- ARM does not accept them on the way in.
-#
-# AzureRM itself never issued a full PUT of a body it built from scratch on
-# day 2: `resourcePublicIpUpdate` is `payload := existing.Model` followed by
-# guarded assignments (`public_ip_resource.go` L340-L410). That code IS the
-# provider's statement that the undeclared members have to be carried forward.
-#
-# 🔴 UNMEASURED. Nothing above has been confirmed against live ARM for this
-# resource type. The merge mechanism itself was measured on
-# `microsoft.network/vpngateways` during the vWAN migration; the exposure
-# table is read from the ARM type, not from an experiment.
+# `azapi_resource.this` creates the public IP once and never PUTs again. Every
+# later write goes through `azapi_update_resource.this`, which GETs the live
+# object and merges. A full PUT could drop writable members this module does
+# not declare (`properties.ipAddress`, `natGateway`, `linkedPublicIPAddress`,
+# `servicePublicIPAddress`, `deleteOption`, `dnsSettings.domainNameLabelScope`).
+# AzureRM avoided that the same way, by updating the existing object.
 # ---------------------------------------------------------------------------
 
-# Standard AVM interfaces (lock, role assignments, diagnostic settings),
-# composed rather than hand-rolled -- `avm-tf-migration` SKILL.md L103.
+# Standard AVM interfaces (lock, role assignments, diagnostic settings).
 module "interfaces" {
   source = "Azure/avm-utl-interfaces/azure"
-  # 🔴 EXACT PIN, not the SKILL's `~> 0.6`. `terraform_module_version` in the
-  # pinned AVM lint configuration requires an exact version, and `~> 0.6` means
-  # `>= 0.6, < 1.0` -- it was already floating to 0.7.0 on every `init
-  # -upgrade`, which would let an unreviewed interfaces release change the lock
-  # name, the role-assignment names or the diagnostic-setting body underneath a
-  # module whose `moved` blocks depend on all three. The managed-files sync raised the
-  # pin from 0.7.0 to 0.9.0; the offline tests ran against 0.9.0, Azure has not.
+  # Exact pin: the AVM lint requires one, and `~> 0.6` would float on every
+  # `init -upgrade`, letting an unreviewed release change the lock name, role
+  # assignment names or diagnostic setting body that the `moved` blocks rely on.
   version = "0.9.0"
 
   location            = var.location
@@ -76,55 +37,27 @@ resource "azapi_resource" "this" {
   parent_id = local.parent_id
   type      = var.resource_types.network_public_ip_addresses
   body      = local.public_ip_body
-  # TFFR8. Collapse the empty path list to null so the write-only argument is
-  # absent by default. Do not add it to lifecycle.ignore_changes: AzAPI stores
-  # it in private state, and ignoring it makes the planned value unknown, which
-  # in turn makes output unknown on every plan.
+  # TFFR8. Collapse the empty list to null so the write-only argument is absent
+  # by default. Do not add it to `ignore_changes`: AzAPI keeps it in private
+  # state, and ignoring it makes the planned `output` unknown on every plan.
   ignore_body_changes = length(var.ignore_body_changes.network_public_ip_addresses) > 0 ? (
     var.ignore_body_changes.network_public_ip_addresses
   ) : null
-  # Matches AzureRM's nil-pointer/`omitempty` serialisation: an optional the
-  # consumer left unset is absent from the request rather than sent as an
-  # explicit JSON null. `locals.tf` already builds the body with `merge()` so
-  # that no null reaches here; this is belt and braces.
   ignore_null_property = true
-  # ✅ TFFR4 requires the attribute on every AzAPI resource, "even if empty".
-  #
-  # WHY `[]` AND NOT `["properties.ipAddress"]`: the allocated address is read
-  # by the SEPARATE read-only `data "azapi_resource" "this"` below, precisely so
-  # that no WRITER has to carry a non-empty export list.
-  #
-  # 🔴 IT IS ONLY SAFE BECAUSE `ignore_changes` SILENCES IT. The attribute
-  # carries no `skip_on` tag, so the provider cannot skip the external request
-  # the moment plan and state differ on it -- and at ADOPTION (the `moved`
-  # blocks at the foot of this file) the migrated state holds `null` while the
-  # config holds `[]`. That difference alone would drag the public IP into an
-  # update and PUT the stale `state.body`. NEVER declare this attribute on an
-  # `azapi_resource` without the matching `ignore_changes` entry.
-  #
-  # 🔴 A FUTURE CHANGE TO THIS EXPORT LIST NEEDS ITS OWN MIGRATION:
-  # `ignore_changes` pins the prior value, so editing the list is a no-op on an
-  # already-managed public IP until a state operation is performed.
+  # TFFR4. Empty on every writer: the allocated address is read by the separate
+  # data source below. It is paired with `ignore_changes` on purpose. At
+  # adoption the migrated state holds `null` while the config holds `[]`, and
+  # without the pin that difference alone plans an update that PUTs the stale
+  # `state.body`. Changing this list later needs a state operation.
   response_export_values = []
   retry                  = var.retry
-  # ✅ `avm_azapi_resource_tags_required`: "AzAPI resources that support tags
-  # must set exactly `tags = var.tags`" -- the literal, not a normalised local.
-  #
-  # AzureRM's `tags.Expand(nil)` returned a pointer to an EMPTY map and never
-  # nil, so an untagged public IP was created with `"tags": {}`, whereas this
-  # sends no `tags` member at all. Immaterial in both directions: ARM treats an
-  # absent `tags` on create exactly as it treats `{}`, and `tags` is in the
-  # `ignore_changes` list below, so after create this attribute is inert and
-  # every tag write goes through `azapi_resource_action.tags`.
+  # `avm_azapi_resource_tags_required` wants the literal `var.tags`. After
+  # create `tags` is ignored; every tag write goes through
+  # `azapi_resource_action.tags`.
   tags = var.tags
 
-  # `public_ip_resource.go` L50-L53 -- AzureRM's own per-resource defaults:
-  # Create 30m, Read 5m, Update 30m, Delete 30m. A consumer override in
-  # `var.timeouts` replaces them; see `local.timeouts`.
-  #
-  # A static block rather than `dynamic "timeouts"`: `var.timeouts` is
-  # `nullable = false` with a `{}` default, so a `dynamic` wrapper would always
-  # emit exactly one block and is a no-op.
+  # AzureRM's per-resource defaults (create 30m, read 5m, update 30m, delete
+  # 30m); a consumer override in `var.timeouts` replaces them.
   timeouts {
     create = local.timeouts.network_public_ip_addresses.create
     delete = local.timeouts.network_public_ip_addresses.delete
@@ -132,33 +65,23 @@ resource "azapi_resource" "this" {
     update = local.timeouts.network_public_ip_addresses.update
   }
 
-  # ⭐ THE ENTIRE PATTERN IS THIS BLOCK.
+  # The pattern: after create this resource is inert and `azapi_update_resource`
+  # below is the only body writer. Without these ignores, any later change to
+  # `body` or `tags` would issue a full PUT that drops the undeclared members
+  # listed at the top of this file. `lifecycle` cannot take a variable, so the
+  # list is spelled out.
   #
-  # Without it, any later change to `body` or `tags` makes THIS resource issue
-  # a full PUT of the configured body -- which omits every row in the exposure
-  # table at the top of this file. With it, this address goes inert after
-  # create and the merge writer below becomes the only body writer.
-  #
-  # The list is audited against azapi's `AzapiResourceModel`; it is the same
-  # list the vWAN pattern module uses. `lifecycle` cannot take a variable, so
-  # it is spelled out.
-  #
-  # 🔴 COSTS ACCEPTED HERE:
-  #   (a) body drift on every path this file stops watching is PERMANENTLY
-  #       invisible. The merge writer still sees drift on the four paths IT
-  #       declares and nowhere else.
-  #   (b) merge is additive -- it CANNOT un-set. Tags are handled by
-  #       `azapi_resource_action.tags` below, which REPLACES the whole set;
-  #       removing a previously-set `domain_name_label` / `reverse_fqdn` is
-  #       refused by a precondition rather than silently ignored.
-  #   (c) `azapi_update_resource.Delete` is an empty function: destroying the
-  #       merge writer on its own makes no ARM call. Harmless here, because
-  #       destroying this address deletes the public IP and everything with it.
-  #   (d) `type` drift is invisible on this address. That is deliberate: it is
-  #       what makes the `moved` upgrade plan immune to the API-version that
-  #       `azapi`'s `MoveResourceState` picks. The satellite resources below do
-  #       NOT ignore `type`, which is why their defaults in
-  #       `var.resource_types` are pinned to the newest embedded versions.
+  # Accepted costs:
+  #   - Body drift on the ignored paths is invisible; the merge writer still
+  #     sees drift on the four paths it declares.
+  #   - Merge cannot un-set a member. Tags are replaced whole by
+  #     `azapi_resource_action.tags`, and removing `domain_name_label` or
+  #     `reverse_fqdn` is refused by a precondition.
+  #   - Destroying `azapi_update_resource` alone makes no ARM call. Harmless:
+  #     deleting this resource deletes the public IP.
+  #   - `type` drift is invisible here, so the `moved` upgrade plan does not
+  #     depend on the API version AzAPI picks. The satellite resources do not
+  #     ignore `type`; their defaults in `var.resource_types` are pinned.
   lifecycle {
     ignore_changes = [
       body,
@@ -182,34 +105,22 @@ resource "azapi_resource" "this" {
 }
 
 # ---------------------------------------------------------------------------
-# DAY 2. GET-then-merge, so an undeclared path is PRESERVED rather than
-# dropped. Carries only the members AzureRM's own update path could assign.
-#
-# 🔴 This resource also runs at CREATE time -- `azapi_update_resource.Create`
-# is a GET + merge + PUT -- so standing a public IP up costs two PUTs. That is
-# inherent to the shape, not a bug in this module.
+# DAY 2. GET, then merge, so undeclared paths are preserved rather than
+# dropped. It also runs at create, so standing a public IP up costs two PUTs.
 # ---------------------------------------------------------------------------
 resource "azapi_update_resource" "this" {
   resource_id = azapi_resource.this.id
   type        = var.resource_types.network_public_ip_addresses
   body        = local.public_ip_update_body
-  # 🔴 NO `ignore_body_changes` HERE, AND IT IS NOT AN OVERSIGHT. TFFR8 lists
-  # `azapi_update_resource` among the types that trigger the requirement, but
-  # the argument does not exist on that resource in azapi 2.12/2.13 --
-  # `AzapiUpdateResourceModel` has `ignore_casing`, `ignore_missing_property`,
-  # `ignore_other_items_in_list` and `list_unique_id_property` and no
-  # `ignore_body_changes`. Writing it would be an "Unsupported argument" error
-  # at validate time. The conflict is reported upward rather than worked
-  # around; wire it to a sibling key if a later azapi release adds it.
+  # No `ignore_body_changes`: TFFR8 lists this type, but the argument does not
+  # exist on `azapi_update_resource` in azapi 2.12/2.13.
   #
-  # ✅ TFFR4. `[]` is correct -- nothing reads this writer's `.output`; the
-  # allocated address comes from the read-only data source below. No
-  # `ignore_changes` here: this address is never imported, so it is always
-  # created fresh and the null-vs-`[]` adoption difference cannot arise.
+  # TFFR4: empty, because nothing reads this writer's `.output`. No
+  # `ignore_changes` is needed: this address is never imported, so the
+  # null-vs-`[]` adoption difference cannot arise.
   response_export_values = []
   retry                  = var.retry
 
-  # Same AzureRM defaults as the full writer.
   timeouts {
     create = local.timeouts.network_public_ip_addresses.create
     delete = local.timeouts.network_public_ip_addresses.delete
@@ -218,81 +129,67 @@ resource "azapi_update_resource" "this" {
   }
 
   # =========================================================================
-  # ⭐ FORCENEW GUARDS. The replacement AzAPI cannot perform, turned into an
-  # error instead of a silence.
+  # ForceNew guards. AzAPI cannot replace on a body property, so a change that
+  # AzureRM would have turned into a replacement is an error here instead of a
+  # silence.
   #
-  # WHY HERE AND NOT ON THE FULL WRITER: the full writer's
-  # `ignore_changes = [body]` makes a changed `sku` or `zones` produce NO diff
-  # on that address, so a precondition there would be evaluated against a plan
-  # that already agrees with itself. This address re-plans on every apply.
+  # They live on this address, not on the full writer: that writer ignores
+  # `body`, so it would plan no diff to check against. Here `body` is the state
+  # body, which for a ForceNew property is the live value. Both sides of every
+  # comparison are built by the same expression in `locals.tf`, so an absent
+  # member is `null`/`[]` on both sides.
   #
-  # WHY IT IS RELIABLE: `azapi_resource.this.body` is the STATE body, pinned by
-  # `ignore_changes = [body]`. For a property AzureRM marked ForceNew that is
-  # exactly the right reference point -- such a property cannot legally change
-  # without a replacement, so the create/import-time value IS the live value.
-  #
-  # BOTH HALVES OF EVERY COMPARISON ARE BUILT BY THE SAME EXPRESSION in
-  # `locals.tf`, so an absent member is `null`/`[]` on both sides and a
-  # non-zonal, prefix-less, edge-zone-less public IP passes every check.
-  #
-  # ⚠️ UNDER `terraform plan -refresh=false` the migrated state body is null,
-  # every state-side local collapses to `null`/`[]`, and these preconditions
-  # FAIL. That is the intended outcome: `-refresh=false` is not a supported
-  # upgrade plan for this module (azapi#1227), and failing here is strictly
-  # better than the silent replacement that issue produces.
+  # Under `terraform plan -refresh=false` the migrated state body is null and
+  # these fail on purpose: that plan is unsupported for this module (azapi#1227).
   # =========================================================================
   lifecycle {
-    # sku (`public_ip_resource.go` L111) at `sku.name`.
+    # `sku.name`
     precondition {
       condition     = local.pip_state_sku_name == local.pip_config_sku_name
       error_message = "`sku` cannot change in place: the live public IP address was created with sku \"${coalesce(local.pip_state_sku_name, "<absent>")}\" and the configuration now asks for \"${coalesce(local.pip_config_sku_name, "<absent>")}\". AzureRM marked `sku` ForceNew (public_ip_resource.go L111), so it would have REPLACED this resource -- releasing the allocated IP address. AzAPI cannot replace on a body property, so this plan is failed instead. If you really intend the replacement, and you accept that the public IP address WILL change, run terraform apply -replace='module.<path>.azapi_resource.this' deliberately."
     }
-    # sku_tier (L121) at `sku.tier`.
+    # `sku.tier`
     precondition {
       condition     = local.pip_state_sku_tier == local.pip_config_sku_tier
       error_message = "`sku_tier` cannot change in place: the live public IP address was created with sku_tier \"${coalesce(local.pip_state_sku_tier, "<absent>")}\" and the configuration now asks for \"${coalesce(local.pip_config_sku_tier, "<absent>")}\". AzureRM marked `sku_tier` ForceNew (public_ip_resource.go L121). Run terraform apply -replace='module.<path>.azapi_resource.this' if you accept that the public IP address WILL change."
     }
-    # ip_version (L101) at `properties.publicIPAddressVersion`.
+    # `properties.publicIPAddressVersion`
     precondition {
       condition     = local.pip_state_ip_version == local.pip_config_ip_version
       error_message = "`ip_version` cannot change in place: the live public IP address was created as \"${coalesce(local.pip_state_ip_version, "<absent>")}\" and the configuration now asks for \"${coalesce(local.pip_config_ip_version, "<absent>")}\". AzureRM marked `ip_version` ForceNew (public_ip_resource.go L101). Run terraform apply -replace='module.<path>.azapi_resource.this' if you accept that the public IP address WILL change."
     }
-    # edge_zone (commonschema.EdgeZoneOptionalForceNew, L95) at
-    # `extendedLocation.name`.
+    # `extendedLocation.name`
     precondition {
       condition     = local.pip_state_edge_zone == local.pip_config_edge_zone
       error_message = "`edge_zone` cannot change in place: the live public IP address was created in edge zone \"${coalesce(local.pip_state_edge_zone, "<absent>")}\" and the configuration now asks for \"${coalesce(local.pip_config_edge_zone, "<absent>")}\". AzureRM marked `edge_zone` ForceNew (public_ip_resource.go L95, commonschema.EdgeZoneOptionalForceNew). Run terraform apply -replace='module.<path>.azapi_resource.this' if you accept that the public IP address WILL change."
     }
-    # public_ip_prefix_id (L165) at `properties.publicIPPrefix.id`.
+    # `properties.publicIPPrefix.id`
     precondition {
       condition     = local.pip_state_prefix_id == local.pip_config_prefix_id
       error_message = "`public_ip_prefix_id` cannot change in place: the live public IP address was allocated from \"${coalesce(local.pip_state_prefix_id, "<absent>")}\" and the configuration now asks for \"${coalesce(local.pip_config_prefix_id, "<absent>")}\". AzureRM marked `public_ip_prefix_id` ForceNew (public_ip_resource.go L165). Run terraform apply -replace='module.<path>.azapi_resource.this' if you accept that the public IP address WILL change."
     }
-    # ddos_protection_plan_id (L95) at
-    # `properties.ddosSettings.ddosProtectionPlan.id`. AzureRM has an update
-    # branch for this field, but the schema marks it ForceNew, so that branch
-    # is unreachable and replacement is the behaviour being preserved.
+    # `properties.ddosSettings.ddosProtectionPlan.id`. AzureRM's update branch
+    # for this field is unreachable (the schema marks it ForceNew), so
+    # replacement is the behaviour being preserved.
     precondition {
       condition     = local.pip_state_ddos_plan_id == local.pip_config_ddos_plan_id
       error_message = "`ddos_protection_plan_id` cannot change in place: the live public IP address uses \"${coalesce(local.pip_state_ddos_plan_id, "<absent>")}\" and the configuration now asks for \"${coalesce(local.pip_config_ddos_plan_id, "<absent>")}\". AzureRM marked `ddos_protection_plan_id` ForceNew (public_ip_resource.go L95). Run terraform apply -replace='module.<path>.azapi_resource.this' if you accept that the public IP address WILL change."
     }
-    # ip_tags (L172) at `properties.ipTags`. Compared as a set of
-    # `"<type>=<value>"` strings so ARM's array ordering cannot cause a false
-    # positive.
+    # `properties.ipTags`, compared as a set of `"<type>=<value>"` strings so
+    # ARM's array order cannot cause a false positive.
     precondition {
       condition     = local.pip_state_ip_tags == local.pip_config_ip_tags
       error_message = "`ip_tags` cannot change in place: the live public IP address carries [${join(", ", sort(tolist(local.pip_state_ip_tags)))}] and the configuration now asks for [${join(", ", sort(tolist(local.pip_config_ip_tags)))}]. AzureRM marked `ip_tags` ForceNew (public_ip_resource.go L172). Run terraform apply -replace='module.<path>.azapi_resource.this' if you accept that the public IP address WILL change."
     }
-    # zones (commonschema.ZonesMultipleOptionalForceNew, L178) at TOP-LEVEL
-    # `body.zones`, NOT under `properties`.
+    # Top-level `body.zones`, not under `properties`.
     precondition {
       condition     = local.pip_state_zones == local.pip_config_zones
       error_message = "`zones` cannot change in place: the live public IP address was created in availability zones [${join(", ", sort(tolist(local.pip_state_zones)))}] and the configuration now asks for [${join(", ", sort(tolist(local.pip_config_zones)))}]. AzureRM marked `zones` ForceNew (public_ip_resource.go L178, commonschema.ZonesMultipleOptionalForceNew). Run terraform apply -replace='module.<path>.azapi_resource.this' if you accept that the public IP address WILL change."
     }
-    # 🔴 NOT A FORCENEW GUARD -- a merge-writer limitation guard.
-    # AzureRM replaced the complete DNS settings object whenever either input
-    # changed. A merge writer cannot remove an omitted nested member, so refuse
-    # removal of either stateful member, including a switch between the inputs.
+    # Not a ForceNew guard. AzureRM replaced the whole DNS settings object when
+    # either input changed, but a merge writer cannot remove an omitted nested
+    # member, so removal of either stateful member (or a switch between them) is
+    # refused.
     precondition {
       condition = (
         local.pip_state_dns_label == null || local.pip_config_dns_label != null
@@ -305,35 +202,18 @@ resource "azapi_update_resource" "this" {
 }
 
 # ---------------------------------------------------------------------------
-# DAY 2 -- THE TAG WRITER.
+# DAY 2, TAGS. `azapi_update_resource` merges, so it can add or change a tag but
+# never remove one. A PUT at `Microsoft.Resources/tags/default` replaces the
+# whole set, as AzureRM did.
 #
-# 🔴 WHY A SEPARATE RESOURCE AT ALL. `azapi_update_resource` is a MERGE writer,
-# and the merge preserves every undeclared key of the LIVE object, so it can
-# add a tag and change a tag but can NEVER REMOVE one -- dropping a key from
-# `var.tags` would produce a PUT that silently re-sent the live tag, a
-# regression against azurerm 4.x where `payload.Tags = tags.Expand(...)`
-# assigned the WHOLE map (public_ip_resource.go L404-L406). A PUT at
-# `Microsoft.Resources/tags/default` REPLACES the whole tag set instead.
-#
-# 🔴 WHY `azapi_resource_action` AND NOT `azapi_resource`.
-# `Microsoft.Resources/tags/default` is an ARM SINGLETON THAT ALWAYS EXISTS, so
-# `azapi_resource` can never CREATE it. Do not "improve" this back into an
-# `azapi_resource`.
-#
-# 🔴 WHY `count = var.tags != null ? 1 : 0`. AzureRM re-PUT tags only on
-# `d.HasChanges("tags")`, so a consumer who never set `tags` never had their
-# tags touched after create. An UNCONDITIONAL replace-all PUT would delete
-# policy-inherited tags from every such consumer's public IP on the first apply
-# after the upgrade. `tags = {}` (non-null, empty) still clears them, which is
-# what AzureRM did.
-#
-# ⚠️ OUT-OF-BAND TAGS ARE NOT DETECTED: this resource's Read issues no GET, so
-# a tag set outside Terraform never appears as drift. When this action is
-# created or updated it replaces the complete tag set, but an unrelated apply
-# does not necessarily execute it.
-#
-# 🔴 WHY `depends_on`. Two writes racing on one parent produce a 409
-# `AnotherOperationInProgress`. `depends_on` serialises them.
+# - It is an `azapi_resource_action`, not an `azapi_resource`: the tags
+#   singleton always exists, so `azapi_resource` can never create it.
+# - `count = var.tags != null`: AzureRM only re-PUT tags when they changed, so
+#   an unconditional replace-all would delete policy-inherited tags from every
+#   consumer who never set `tags`. `tags = {}` still clears them.
+# - Out-of-band tags are not detected as drift: this action issues no GET.
+# - `depends_on` serialises it behind the merge writer; two writes on one
+#   parent return 409 `AnotherOperationInProgress`.
 # ---------------------------------------------------------------------------
 resource "azapi_resource_action" "tags" {
   count = var.tags != null ? 1 : 0
@@ -346,7 +226,6 @@ resource "azapi_resource_action" "tags" {
       tags = local.public_ip_tags
     }
   }
-  # ✅ TFFR4: declared on every AzAPI resource, "even if empty".
   response_export_values = []
   retry                  = var.retry
 
@@ -361,25 +240,15 @@ resource "azapi_resource_action" "tags" {
 }
 
 # ---------------------------------------------------------------------------
-# THE ALLOCATED ADDRESS, read-only.
+# THE ALLOCATED ADDRESS, read-only. A data source has no writer and no
+# `state.body`, so a non-empty `response_export_values` here cannot drag anything
+# into an update. Do not copy it onto a writer: on `azapi_resource.this` it
+# causes a stale full PUT at adoption.
 #
-# 🔴 WHY A `.output` IS ALLOWED HERE AND NOWHERE ELSE IN THIS MODULE: a data
-# source HAS NO WRITER. It never PUTs, it has no `state.body`, and
-# `response_export_values` on it cannot drag anything into an update -- so the
-# adoption hazard that governs the attribute on `azapi_resource.this` simply
-# does not exist on this address.
-#
-# 🟡 NO `depends_on` ON THE MERGE WRITER, deliberately. Adding one would defer
-# this read to apply time on every change and push an unknown through
-# `output "public_ip_address"`. Without it the read depends only on
-# `azapi_resource.this.id`, which is stable after create -- and, critically, is
-# already KNOWN on the `moved` upgrade plan, so the output does not go unknown
-# during the migration. THE COST: after a change that reallocates the address
-# the output is one apply behind. A Static public IP's address does not move.
-#
-# ⛔ DO NOT "generalise" this non-empty export list onto a writer. Giving
-# `azapi_resource.this` a non-empty `response_export_values` is what causes the
-# stale full PUT at adoption.
+# There is deliberately no `depends_on` on the merge writer. It would defer
+# this read to apply time and make `output "public_ip_address"` unknown during
+# the `moved` upgrade plan. The cost is that the output can lag one apply
+# behind a change that reallocates the address; a Static address does not move.
 # ---------------------------------------------------------------------------
 data "azapi_resource" "this" {
   resource_id            = azapi_resource.this.id
@@ -388,17 +257,16 @@ data "azapi_resource" "this" {
 }
 
 # ---------------------------------------------------------------------------
-# MANAGEMENT LOCK. A plain single writer, NOT candidate 1.
-# `Microsoft.Authorization/locks` has a two-member body and no child
-# collections, so a full PUT is parity rather than a hazard.
+# MANAGEMENT LOCK. A plain single writer: the body has two members and no child
+# collections, so a full PUT is parity.
 #
-# `name` and `notes` are NOT taken from `avm-utl-interfaces` unchanged:
-#   - `lock_azapi.name` is `null` when the consumer did not set one, while the
-#     AzureRM implementation generated `lock-<kind>`. The lock's NAME is part
-#     of its resource ID, so taking the interfaces value would make the `moved`
-#     block below point at a different resource.
-#   - `lock_azapi.body` has no `notes`, while the AzureRM implementation always
-#     set one. Re-adding it keeps the upgrade plan free of a body diff.
+# `name` and `notes` are not taken from `avm-utl-interfaces` unchanged, because
+# the lock name is part of its resource ID and AzureRM always set both:
+#   - `lock_azapi.name` is `null` when unset, while AzureRM generated
+#     `lock-<kind>`. Taking the null would make the `moved` block point at a
+#     different resource.
+#   - `lock_azapi.body` has no `notes`; re-adding AzureRM's string keeps the
+#     upgrade plan free of a body diff.
 # ---------------------------------------------------------------------------
 resource "azapi_resource" "lock" {
   count = var.lock != null ? 1 : 0
@@ -408,10 +276,6 @@ resource "azapi_resource" "lock" {
   type      = var.resource_types.authorization_locks
   body = merge(module.interfaces.lock_azapi.body, {
     properties = merge(module.interfaces.lock_azapi.body.properties, {
-      # A consumer-supplied note wins; otherwise the AzureRM string is restored
-      # verbatim, because `avm-utl-interfaces` leaves `notes` null and AzureRM
-      # always set one -- taking the null would put an avoidable lock-body diff
-      # on the upgrade plan.
       notes = local.lock_notes
     })
   })
@@ -419,10 +283,8 @@ resource "azapi_resource" "lock" {
     var.ignore_body_changes.authorization_locks
   ) : null
   ignore_null_property = true
-  # ✅ TFFR4, paired with the `ignore_changes` entry below for the same reason
-  # as the public IP: the attribute is non-skippable, and a null-vs-`[]`
-  # difference at adoption would otherwise force a full PUT of the stale
-  # `state.body`.
+  # Empty and ignored, as on the public IP: a null-vs-`[]` difference at
+  # adoption would otherwise force a full PUT of the stale `state.body`.
   response_export_values = []
   retry                  = var.retry
 
@@ -446,14 +308,10 @@ resource "azapi_resource" "lock" {
 
 # ---------------------------------------------------------------------------
 # ROLE ASSIGNMENTS. A plain single writer; the body comes from
-# `avm-utl-interfaces`, with AzureRM's `skip_service_principal_aad_check`
-# request-body compatibility fallback restored below.
-#
-# ⚠️ ARM has no request property named `skip_service_principal_aad_check`.
-# AzureRM also used this flag to send `principalType = ServicePrincipal` when
-# `principal_type` was unset. Preserve that behavior; an explicit
-# `principal_type` remains authoritative. Retry behavior is configured through
-# `var.retry`.
+# `avm-utl-interfaces`. ARM has no `skip_service_principal_aad_check` property,
+# but AzureRM sent `principalType = ServicePrincipal` when it was true and
+# `principal_type` was unset. That is restored below; an explicit
+# `principal_type` wins.
 # ---------------------------------------------------------------------------
 resource "azapi_resource" "role_assignment" {
   for_each = module.interfaces.role_assignments_azapi
@@ -507,12 +365,11 @@ resource "azapi_resource" "role_assignment" {
     update = local.timeouts.authorization_role_assignments.update
   }
 
-  # 🔴 `name` IS IGNORED, and that is the single most important line in this
-  # resource. `avm-tf-migration` SKILL.md L107-L117 blesses exactly this case:
-  # "a migration case where an imported server-assigned role-assignment name
-  # must remain stable".
-  #
-  # A replacement ignores this entry and takes the derived name, so it gets a new GUID.
+  # `name` is ignored so an adopted, server-assigned GUID stays stable
+  # (`avm-tf-migration` SKILL). A replacement ignores this entry and takes the
+  # derived name above, so it gets a new GUID. `response_export_values` is not
+  # ignored, so the upgrade apply rewrites the adopted body under the same GUID
+  # and a later in-place edit does not trip `replace_triggers_refs`.
   lifecycle {
     ignore_changes = [
       name,
@@ -538,36 +395,19 @@ resource "azapi_resource" "diagnostic_setting" {
   ignore_body_changes = length(var.ignore_body_changes.insights_diagnostic_settings) > 0 ? (
     var.ignore_body_changes.insights_diagnostic_settings
   ) : null
-  # Carries `logAnalyticsDestinationType = null` for the `Dedicated` case, which
-  # is how AzureRM behaved; the prune is what makes that equivalent.
+  # `logAnalyticsDestinationType = null` is carried for the `Dedicated` case, as
+  # AzureRM did; the null prune makes that equivalent.
   ignore_null_property = true
-  # 🔴 PERPETUAL-DIFF FIX (was D-7). ARM's GET on a diagnostic setting returns
-  # the COMPLETE category-group set for the parent resource type, not just the
-  # entries that were PUT. Measured on `Microsoft.Network/publicIPAddresses`:
-  # the PUT response echoes only `{categoryGroup = "allLogs", enabled = true}`,
-  # but the very next GET returns that PLUS
-  # `{categoryGroup = "audit", enabled = false}` -- because
-  # `.../diagnosticSettingsCategories` reports `categoryGroups = ["audit",
-  # "allLogs"]` for this type. `avm-utl-interfaces` (by design, and matching
-  # what AzureRM PUT) only ever emits `enabled = true` entries, so the extra
-  # response-only element is permanent drift: `azapi_resource` compares list
-  # members element-by-element and nothing else in this block suppresses it.
-  # AzureRM was idempotent here only because its READ discarded the disabled
-  # entries client-side.
+  # Perpetual-diff fix. ARM's GET returns the complete category-group set for
+  # the parent type, e.g. `{categoryGroup = "audit", enabled = false}` next to
+  # the `allLogs` entry that was PUT, while `avm-utl-interfaces` (like AzureRM)
+  # only emits `enabled = true` entries. These two arguments are AzAPI's answer
+  # to partial list management. The composite key is needed because a
+  # category-group entry has `category = null` and a log-category entry has
+  # `categoryGroup = null`. `properties.metrics` is covered the same way.
   #
-  # These two arguments are the provider's own answer to exactly this shape
-  # ("partial list management"), and `list_unique_id_property`'s documentation
-  # names `"category, categoryGroup"` as its worked example. The composite key
-  # is required: a category-group entry has `category = null` and a
-  # log-category entry has `categoryGroup = null`, so neither field alone
-  # identifies an element. `properties.metrics` is covered for the same reason
-  # -- a consumer setting `metric_categories = []` sends no `metrics` while ARM
-  # still returns `AllMetrics` disabled.
-  #
-  # Cost, documented rather than hidden: an out-of-band ENABLE of a category
-  # this module does not manage is no longer reported as drift. A change made
-  # through the module's own inputs still plans and applies normally, because
-  # `body` itself is configuration.
+  # Cost: an out-of-band enable of a category this module does not manage is no
+  # longer reported as drift. Changes through the module's inputs still apply.
   ignore_other_items_in_list = [
     "properties.logs",
     "properties.metrics",
@@ -594,27 +434,16 @@ resource "azapi_resource" "diagnostic_setting" {
 }
 
 # =============================================================================
-# AzureRM -> AzAPI state moves (`avm-tf-migration` SKILL.md L66-78)
+# AzureRM -> AzAPI state moves (`avm-tf-migration` SKILL). Whole-resource moves
+# with the same keys, so a consumer only bumps the module version.
 #
-# The provider migration is IN PLACE: same module, same `count`/`for_each`
-# boundary, same keys, so every move is a whole-resource move and the consumer
-# only bumps the module version.
+# Plan the upgrade with a normal refresh, never `-refresh=false`: AzAPI's
+# `MoveResourceState` leaves `location` null and `ModifyPlan` then plans a
+# replacement (azapi#1227). A refreshing plan repairs it.
 #
-# 🔴 PLAN WITH A NORMAL REFRESH. Do not use `terraform plan -refresh=false` for
-# the upgrade. AzAPI's `MoveResourceState` writes only ID, Name, ParentID and
-# Type, leaving `location` null, and `ModifyPlan` then reads that null and
-# marks the resource for REPLACEMENT. A refreshing plan repairs it -- the Read
-# backfills `location` and re-flattens `body` once. This was measured on a
-# PUBLIC IP (azapi#1227): refreshing plan `0 to add, 2 to change, 0 to destroy`;
-# `-refresh=false` `1 to add, 1 to change, 1 to destroy` with
-# `+ location = "eastus" # forces replacement`. The supported state migration
-# path is the in-module `moved` blocks below; sovereign-cloud behavior has not
-# been established by that public-cloud measurement.
-#
-# 🔴 THE MERGE WRITER, THE TAGS ACTION AND THE READ-ONLY DATA SOURCE HAVE NO
-# `moved` BLOCK because they have no AzureRM predecessor. They are ADDED by the
-# upgrade, which is why the upgrade plan is "N to add, N to change, 0 to
-# destroy" and not "no changes".
+# The merge writer, tags action and data source have no `moved` block because
+# they have no AzureRM predecessor. The upgrade adds them, so its plan is
+# "N to add, N to change, 0 to destroy", not "no changes".
 # =============================================================================
 
 moved {
