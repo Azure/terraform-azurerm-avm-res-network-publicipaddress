@@ -12,7 +12,7 @@ The resource group is created with `azapi_resource`, and the module is called wi
 # This ensures we have unique CAF compliant names for our resources.
 module "naming" {
   source  = "Azure/avm-utl-naming/azure"
-  version = "0.2.0"
+  version = "0.3.0"
 }
 
 # This is required for resource modules.
@@ -124,7 +124,7 @@ The following Modules are called:
 
 Source: Azure/avm-utl-naming/azure
 
-Version: 0.2.0
+Version: 0.3.0
 
 ### <a name="module_public_ip_address"></a> [public\_ip\_address](#module\_public\_ip\_address)
 
